@@ -1,6 +1,6 @@
-# Project Specification v5: **AetherMix** (Autonomous Agentic Live Sound Engineer for Apple MainStage)
+# Project Specification v5.1: **AetherMix** (Autonomous Agentic Live Sound Engineer for Apple MainStage)
 
-> **Status:** Draft v5 — Ready for Phase 0 Hardware Spike  
+> **Status:** Locked v5.1 — Ready for Phase 0 Hardware Spike  
 > **Target Hardware:** Apple Silicon macOS 15+ (optimized for M4 Max, 128 GB Unified Memory)  
 > **Host Integration:** Apple MainStage (Concert-Level Audio Channel Strips)
 
@@ -53,7 +53,7 @@ Build **AetherMix**, a native macOS application, isolated MIDI bridge daemon, an
 ## 3. Technology Stack & Repository Layout
 
 ### Stack
-* **Standalone MIDI Bridge (`bridge/`):** Python 3.12 stdlib + `python-rtmidi` ONLY (zero NumPy/PyTorch/FastAPI imports, `< 20 MB` RSS, `< 1 ms` latency), supervised by macOS `launchd` (`KeepAlive: true`, `ProcessType: Interactive`), exposing local Unix Domain Socket (`~/.aethermix/bridge.sock`, `0600`) to both `engine` and `macos-app`, persisting `last_sent_cc` atomically to `~/.aethermix/bridge_state.json`.
+* **Standalone MIDI Bridge (`bridge/`):** Python 3.12 stdlib + `python-rtmidi` ONLY (zero NumPy/PyTorch/FastAPI imports, `< 20 MB` RSS, `< 1 ms` latency), supervised by macOS `launchd` (`KeepAlive: true`, `ThrottleInterval: 1`, `ProcessType: Interactive`), exposing local Unix Domain Socket (`~/.aethermix/bridge.sock`, `0600`, authenticated with `~/.aethermix/session.token`) to both `engine` and `macos-app`, persisting `last_sent_cc` atomically (`100 ms` debounce) to `~/.aethermix/bridge_state.json`.
 * **AI & Real-Time Audio Engine (`engine/`):** Python 3.12 via `uv`, FastAPI + WebSocket (`ws://127.0.0.1:8765/ws`, authenticated via `~/.aethermix/session.token`, `0600`), Pydantic v2, `sounddevice` (PortAudio), `numpy`/`scipy`, `onnxruntime` (1-thread CPU Silero VAD), `transformers` + `torch` (1-thread CPU CLAP in Background-QoS subprocess), `httpx` (async Ollama client), `sqlite3` (WAL mode).
 * **Native macOS UI (`macos-app/`):** Swift 6 + SwiftUI (macOS 15+), `XcodeGen` (`project.yml`) + `Package.swift`. Connects to **both** the Engine WebSocket (telemetry, Brain Stream, rules) AND `~/.aethermix/bridge.sock` (direct virtual faders + Emergency Bypass independent of engine health). Quick-chips and keyboard typing are the primary critique UI; Apple `Speech` dictation is optional (rehearsal use).
 * **Audio/MIDI Infrastructure:** BlackHole 16ch + 48 kHz macOS Aggregate Device (physical PA interface as clock master, drift correction enabled on BlackHole), CoreMIDI Virtual Port or OS-owned IAC Driver bus (decided in Phase 0) + Hardware MIDI Controller.
@@ -130,7 +130,7 @@ aethermix/
 ## 4. Model Manifest & Automated Provisioning (`scripts/bootstrap_mac.sh`)
 
 1. **System Dependencies (Homebrew):** `blackhole-16ch`, `ollama`, `uv`, `portaudio`, `xcodegen`.
-2. **Standalone Bridge Service:** Installs `scripts/com.aethermix.midibridge.plist` to `~/Library/LaunchAgents/` (`KeepAlive: true`, `ProcessType: Interactive`).
+2. **Standalone Bridge Service:** Installs `scripts/com.aethermix.midibridge.plist` to `~/Library/LaunchAgents/` (`KeepAlive: true`, `ThrottleInterval: 1`, `ProcessType: Interactive`).
 3. **Supervisory Reasoning LLM (Ollama — configurable in `service_plan.json`):**
    * Benchmark current local structured-JSON models in Phase 0 (`qwen3:14b` with `think: false` / `qwen3:8b` / `qwen2.5:14b`) and select the fastest model passing JSON-schema accuracy + 30-minute zero-overload stress gate.
    * Optional offline/post-service analysis model (`--with-32b` flag): `qwen3:32b` or `qwen2.5:32b`.
@@ -177,10 +177,11 @@ MainStage drives a **48 kHz macOS Aggregate Device** combining the physical PA i
 * **Always-On Manual Control:** Both the hardware controller (`midi.fader_map`) AND SwiftUI's direct `BridgeSocketClient` (`ui_manual_cc`) pass through to MainStage in **every** mode (`SHADOW`, `ACTIVE`, `EMERGENCY_BYPASS`, watchdog trip, or engine crash). `SHADOW`, `BYPASS`, and watchdog freeze **agent writes only**.
 * **Bridge-Latched Emergency Bypass & Hardware Buttons:** Hardware `emergency_bypass` (`CC 104`) OR SwiftUI `set_bypass(true)` latches directly inside `midi_bridge_daemon`, dropping all incoming `agent_cc_write` frames in `< 1 ms` regardless of engine health. Hardware `👍` (`CC 102`) and `👎` (`CC 103`) forward to the engine immediately (works even when MainStage has macOS focus).
 * **Dead-Engine Watchdog inside Bridge:** Expects `engine_heartbeat` (or agent frame) every `<= 500 ms` while engine socket is connected. On `> 500 ms` silence or socket EOF, sets `engine_connected = false`, holds `last_sent_cc` (never zeros!), broadcasts `bridge_state` to SwiftUI, and continues serving hardware + SwiftUI manual control seamlessly.
+* **Bridge-Level In-Flight Race Guard (`human_seq` Fence + `250 ms` Window):** Every human hardware or UI CC move increments a per-control monotonic `human_seq` inside `midi_bridge_daemon` and starts a `250 ms` local drop window. Any `agent_cc_write` arriving with `ack_human_seq < current_human_seq` (or within the `250 ms` guard) is dropped immediately inside the bridge, guaranteeing an in-flight `50 Hz` agent glide can never overwrite an operator's touch.
 * **Authoritative Persisted `last_sent_cc` & Restart Resilience:**
-  * Persists `last_sent_cc[(channel_id, control)]` atomically (`tmp` + `os.replace` to `~/.aethermix/bridge_state.json`) at up to `1 Hz` on change (and immediately on `SIGTERM`), reloading on startup so bridge restarts or reboots retain pickup reference values.
-  * `mainstage_out_mode` supports `"virtual_port"` or OS-owned `"iac_bus"` (selected after Phase 0 `kill -9` bridge-restart test verifies whether MainStage retains virtual-port MIDI bindings).
-* **Soft-Takeover & USB Hot-Plug:** Supports `pickup_catchup` (default for non-motorized faders: ignores physical fader until crossing `±2 CC` of `last_sent_cc`), `immediate`, and `relative_encoder`. Polls USB-MIDI ports at `1 Hz`; on unplug, alerts `CONTROLLER_DISCONNECTED`, allows SwiftUI direct bridge faders as immediate fallback, and re-attaches in `pickup_catchup` on replug.
+  * Persists `last_sent_cc[(channel_id, control)]` atomically (`tmp` + `os.replace` to `~/.aethermix/bridge_state.json`) on every change (debounced `100 ms` + immediate on `SIGTERM`), reloading on startup so bridge restarts or reboots retain pickup reference values.
+  * `mainstage_out_mode` supports `"virtual_port"` or OS-owned `"iac_bus"` (selected after Phase 0 `kill -9` bridge-restart test verifies MainStage binding persistence and `< 2 s` recovery via `ThrottleInterval: 1`).
+* **Soft-Takeover (With Pre-Pickup Touch Lock) & USB Hot-Plug:** Supports `pickup_catchup` (default for non-motorized faders), `immediate`, and `relative_encoder`. In `pickup_catchup`, **any physical fader movement immediately emits a `human_touch_event` (engaging the bridge race guard and engine touch lock so the operator never chases a moving agent target)**, while MIDI passthrough to MainStage waits until the fader crosses within `±2 CC` of `last_sent_cc`. Polls USB-MIDI ports at `1 Hz`; on unplug, alerts `CONTROLLER_DISCONNECTED`, allows SwiftUI direct bridge faders as immediate fallback, and re-attaches in `pickup_catchup` on replug.
 * **Canonical Full-Range `dB ↔ CC` Tapers (0..127, measured in Phase 0):**
   * **Volume Taper:** `[(0, null), (1, -60.0), (16, -36.0), (32, -24.0), (64, -12.0), (96, 0.0), (114, +6.0), (127, +6.0)]`
   * **Reverb Send Taper (dB):** `[(0, null), (1, -60.0), (32, -24.0), (64, -12.0), (96, 0.0), (114, +6.0), (127, +6.0)]`
@@ -206,8 +207,8 @@ MainStage drives a **48 kHz macOS Aggregate Device** combining the physical PA i
 
 #### Startup, Sync & Fast Post-Crash Re-Arming
 1. Engine always boots into `SHADOW_OBSERVE` with all channels disarmed (`armed = false`) and immediately hydrates `current_db` for every `(channel_id, control)` from `midi_bridge_daemon` (`get_bridge_state`):
-   * Controls with an observed live `last_sent_cc` in the running bridge are immediately `sync_status = "SYNCED"`.
-   * Cold-boot controls (or values reloaded from `bridge_state.json` after a reboot) start `UNVERIFIED` until touched on the controller/UI, captured via baseline, or confirmed via `Confirm & Sync` (`2.0 dB/s` initial handover glide).
+   * Controls with an observed live `last_sent_cc` in the running bridge (`restored_from_disk_at == null`) are immediately `sync_status = "SYNCED"`.
+   * Cold-boot controls or values reloaded from `bridge_state.json` after a bridge crash/reboot (`restored_from_disk_at != null`) are flagged `UNVERIFIED` until touched on the controller/UI, captured via baseline, or confirmed via `Confirm & Sync` (`2.0 dB/s` handover glide). If the bridge crashes and restarts while the engine is `ACTIVE`, the engine automatically drops to `SHADOW_OBSERVE`, marks restored controls `UNVERIFIED`, and flashes a reconnect banner.
 2. **1-Click `Restore Previous Arming`:** Persists the prior `armed` bitmask in SQLite `last_known_state`; after an engine restart, restores all previously armed channels in 1 click (still requiring explicit switch from `SHADOW_OBSERVE` → `ACTIVE`).
 
 ---
@@ -267,10 +268,10 @@ MainStage drives a **48 kHz macOS Aggregate Device** combining the physical PA i
         * Target = `phase_baselines_db["SPOKEN_WORD"][i] + human_session_offset_db[i, "vol"]`, slewed via **`slew_speech_open_up = 48.0 dB/s`**.
         * Holds until phase confirms `SPOKEN_WORD`/`PRAYER_UNDERSCORE` OR sustained speech silence `>= 3.0 s`, then releases at `4.0 dB/s`.
      4. **Tier-1 Ensemble-Gated `Instrument-Open` Reflex (Fast Song Start, `< 800 ms`, Zero Prayer/Sermon False Opens):**
-        * **Never** triggers while `active_phase == PRAYER_UNDERSCORE` OR while `speech_open_active` is `true` on any `spoken_primary` channel.
+        * **Never** triggers while `active_phase == PRAYER_UNDERSCORE`.
         * Tracks per-instrument silent→active onset: channel was below silent threshold (`norm_vband_db <= -30.0 dB`) for **`>= 3.0 s`** and rises to `norm_vband_db >= -12.0 dB` for **`>= 200 ms`**.
         * **Song-Start Ensemble Gate:** Fires only when **either** `instrument_band` (`ch9_drums`) has a silent→active onset, **or** `>= 2` distinct instrument roles (`instrument_pad`, `instrument_guitar`, `instrument_band`) have silent→active onsets within a `1.0 s` window.
-        * Opens active non-touch-locked instrument channels toward `WORSHIP_LOW` (or next Order-of-Service worship segment) at **`slew_instrument_open_up = 24.0 dB/s`** (`-16 dB → -2 dB` in `583 ms`).
+        * **Speech-Over-Intro Handling:** Opens active non-touch-locked instrument channels toward `WORSHIP_LOW` (or next Order-of-Service worship segment) at **`slew_instrument_open_up = 24.0 dB/s`** (`-16 dB → -2 dB` in `583 ms`). If `speech_open_active` is simultaneously `true` (e.g., pastor saying *"let's stand and sing"* over the intro), the ensemble gate still fires, but targets are capped at **`worship_target + duck_depth_db`** (`-6 dB` under the pastor) until speech ends.
         * **Auto-Release Guard:** If macro phase does NOT transition to `WORSHIP_LOW` or `WORSHIP_HIGH` within **`8.0 s`** (or instrument returns silent for `>= 3.0 s`), releases smoothly back to active phase target at musical slew (`4.0 dB/s`).
         * Additionally, operator advancing `service_step_idx` to a worship segment pre-stages instruments toward `WORSHIP_LOW` at `4.0 dB/s`.
      5. **Bleed-Safe, Role-Configurable Auto-Ducking Prior:**
@@ -640,7 +641,7 @@ Validated by Pydantic with per-parameter hard bounds (`vol_db_offset: [-12, +6]`
     }
     ```
   * `meter_frame` (`30–50 Hz`, aligned strictly to `state_snapshot.channel_ids[]`, routed exclusively to `MeterStore`):
-    `{ "rms_db": [...], "peak_db": [...], "clip": [...], "vad": [...], "master_lufs": -24.1, "target_cc": [...], "actual_cc": [...] }`
+    `{ "rms_db": [...], "peak_db": [...], "clip": [...], "vad": [...], "master_lufs": -24.1, "vol_target_cc": [...], "vol_actual_cc": [...], "reverb_target_cc": [...], "reverb_actual_cc": [...] }`
   * `brain_event`: `{ "id": "...", "category": "PERCEPTION|ACTION|SAFETY|LLM|RLHF", "summary": "...", "detail": "...", "confidence": 0.92, "ts_ms": 0 }`
   * `heartbeat` (`1 Hz`): `{ "uptime_s": 1240, "loop_p95_ms": 1.8, "loop_p99_ms": 6.2, "audio_ok": true, "bridge_ok": true, "clap_ok": true, "ollama_ok": true }`
 * **Client → Server RPCs (all return `ack` / `error`):**
@@ -648,15 +649,16 @@ Validated by Pydantic with per-parameter hard bounds (`vol_db_offset: [-12, +6]`
 
 ### 6.5 Standalone Bridge Unix Socket Protocol (`~/.aethermix/bridge.sock`, `0600`)
 
-Newline-delimited JSON (NDJSON) over local `AF_UNIX` stream socket supporting two concurrent clients (`role: "engine"` and `role: "ui"`):
+Newline-delimited JSON (NDJSON) over local `AF_UNIX` stream socket supporting two concurrent clients (`role: "engine"` and `role: "ui"`), authenticated with the shared `~/.aethermix/session.token`:
 
-* **Handshake:** `{ "type": "hello", "role": "engine" | "ui", "protocol_version": "5.0" }`
+* **Handshake:** `{ "type": "hello", "role": "engine" | "ui", "token": "<session.token>", "protocol_version": "5.1" }`
 * **Bridge → Engine & UI:**
-  * `bridge_state`: `{ "last_sent_cc": {"ch1_pastor:vol": 96, ...}, "bypass_latched": false, "controller_connected": true, "engine_connected": true, "pickup_pending": {"ch5_keys:vol": -1}, "restored_from_disk_at": null }`
-  * `human_cc_event`: `{ "channel_id": "ch5_keys", "control": "vol", "cc": 78, "source": "hardware" | "ui", "ts_ms": 0 }`
+  * `bridge_state`: `{ "last_sent_cc": {"ch1_pastor:vol": 96, ...}, "human_seq": {"ch1_pastor:vol": 4, ...}, "bypass_latched": false, "controller_connected": true, "engine_connected": true, "pickup_pending": {"ch5_keys:vol": -1}, "restored_from_disk_at": null }`
+  * `human_touch_event`: `{ "channel_id": "ch5_keys", "control": "vol", "human_seq": 5, "picked_up": false, "source": "hardware", "ts_ms": 0 }` *(sent immediately on pre-pickup fader movement so engine freezes glides before crossover)*
+  * `human_cc_event`: `{ "channel_id": "ch5_keys", "control": "vol", "cc": 78, "human_seq": 6, "source": "hardware" | "ui", "ts_ms": 0 }`
   * `action_button_event`: `{ "action": "thumbs_up" | "thumbs_down" | "emergency_bypass", "ts_ms": 0 }`
 * **Engine → Bridge:**
-  * `agent_cc_write`: `{ "channel_id": "ch5_keys", "control": "vol", "cc": 74, "seq": 1042 }` *(dropped silently if `bypass_latched == true`)*
+  * `agent_cc_write`: `{ "channel_id": "ch5_keys", "control": "vol", "cc": 74, "seq": 1042, "ack_human_seq": 6 }` *(dropped immediately if `bypass_latched == true`, `ack_human_seq < current_human_seq`, or within `250 ms` touch guard)*
   * `midi_learn_pulse`: `{ "channel_id": "ch5_keys", "control": "vol" }`
   * `engine_heartbeat`: `{ "ts_ms": 0 }` *(sent at `>= 20 Hz` or on every `50 Hz` loop tick; `> 500 ms` silence trips `engine_connected = false` inside bridge, holding `last_sent_cc` without zeroing)*
 * **UI → Bridge (Direct Manual Control, Works Even When Engine Is Dead!):**
@@ -671,7 +673,7 @@ Newline-delimited JSON (NDJSON) over local `AF_UNIX` stream socket supporting tw
 | Failure / Edge Case | Guaranteed Behavior |
 | :--- | :--- |
 | **AI engine crashes, hangs, or trips watchdog** | Bridge detects dead engine within `500 ms`, stops expecting agent frames (holds faders, never zeros), and keeps **both** hardware controller passthrough AND SwiftUI direct bridge faders + Bypass live (`< 2 ms`). SwiftUI flashes `DISCONNECTED — MANUAL CONTROL` with Last Known Faders + 1-click restart & `Restore Previous Arming`. |
-| **Bridge daemon itself crashes** | `launchd` (`KeepAlive`) restarts `midi_bridge_daemon` immediately, reloads persisted `last_sent_cc` from `~/.aethermix/bridge_state.json`, and re-attaches to OS-owned IAC bus (or verified persistent virtual port). |
+| **Bridge daemon itself crashes** | `launchd` (`KeepAlive`, `ThrottleInterval: 1`) restarts `midi_bridge_daemon` in `< 2 s`, reloads persisted `last_sent_cc` (`100 ms` debounce) from `~/.aethermix/bridge_state.json`, and re-attaches to OS-owned IAC bus (or verified persistent virtual port). Engine detects `restored_from_disk_at != null`, drops to `SHADOW_OBSERVE`, and marks controls `UNVERIFIED`. |
 | **Hardware MIDI controller unplugged mid-service** | Bridge detects USB-MIDI disconnect within `1 s`, holds MainStage faders steady, alerts `CONTROLLER_DISCONNECTED`, serves SwiftUI direct bridge faders as immediate manual fallback (even if engine is down!), and re-attaches in `pickup_catchup` upon replug. |
 | **Operator drags fader with mouse in MainStage GUI** | Invisible unless Phase 0 confirms MainStage feedback. Operating rule: mix via MIDI controller or AetherMix UI while armed; disarm channel before mouse-editing MainStage. |
 | **Ollama unreachable, slow, or invalid JSON** | `5.0 s` timeout + Ollama JSON Schema `format` + Pydantic per-parameter validation. Tier 1 mixing & deterministic rules continue uninterrupted. |
@@ -688,6 +690,7 @@ Newline-delimited JSON (NDJSON) over local `AF_UNIX` stream socket supporting tw
 * **App-Managed Lifecycle (`EngineProcessManager`):**
   * On launch, `AetherMix.app` verifies (and offers 1-click install of) the `com.aethermix.midibridge.plist` `launchd` LaunchAgent, connects directly to `~/.aethermix/bridge.sock`, and checks if `127.0.0.1:8765` is running (`make dev` support); otherwise spawns/monitors the bundled local `uv` Python engine and streams logs into a Diagnostics drawer.
 * **macOS TCC Microphone Permissions:** Under `make dev` (launched from Terminal), macOS grants CoreAudio/BlackHole permission to **Terminal.app**; under standalone `AetherMix.app`, macOS grants permission to **`AetherMix.app`** via `NSMicrophoneUsageDescription` in `Info.plist`. `SetupWizardView` detects active launch context and guides the volunteer explicitly.
+* **MainStage Exclusive Controller Check (`SetupWizardView`):** Explicitly verifies and prompts the operator to **remove any direct hardware MIDI controller assignments inside MainStage** so ONLY the AetherMix output port drives Concert-level strips (preventing dual-path conflict with pickup and touch logic).
 * **Safe-Update Lock:** Engine, model, and app update actions are **hard-blocked while `autonomy_mode == ACTIVE`** (requires `SHADOW_OBSERVE` or `EMERGENCY_BYPASS`).
 
 ---
@@ -697,22 +700,22 @@ Newline-delimited JSON (NDJSON) over local `AF_UNIX` stream socket supporting tw
 ### Phase 0 — MainStage Hardware & Contention Spike (1–2 Days, Mandatory Gate Before Phase 1)
 Execute `scripts/phase0_spike.py` against your actual MainStage Concert & M4 Max:
 * [ ] Confirm whether MainStage sends MIDI feedback CCs on Concert-level Screen Controls (mouse & external CC).
-* [ ] Test **`kill -9` on the bridge process + restart**: confirm whether MainStage keeps responding to a recreated CoreMIDI virtual port without re-learning; if not, lock `mainstage_out_mode = "iac_bus"`.
-* [ ] Confirm standalone bridge passthrough (`Hardware Controller → bridge → MainStage`) with `< 2 ms` latency.
+* [ ] Test **`kill -9` on the bridge process + `launchd` (`ThrottleInterval: 1`) restart**: measure time until controller regains control (**target `< 2 s`**) and confirm whether MainStage keeps responding to a recreated CoreMIDI virtual port without re-learning; if not, lock `mainstage_out_mode = "iac_bus"`.
+* [ ] Confirm standalone bridge passthrough (`Hardware Controller → bridge → MainStage`) with `< 2 ms` latency (and verify direct controller mapping is removed in MainStage).
 * [ ] Measure empirical `dB ↔ CC` curves (`0..127`) for **both** MainStage Volume AND Bus Reverb Send.
 * [ ] Confirm pre-fader sends (`Ch 1–12`) to BlackHole remain invariant when Concert faders move.
 * [ ] Benchmark candidate Ollama models (`qwen3:14b` / `qwen3:8b` / `qwen2.5:14b`) + 1-thread Background-QoS CLAP alongside your heaviest MainStage concert at live buffer size for **30 minutes** → **Gate: `0` MainStage CPU/CoreAudio overloads**, LLM p95 JSON latency `< 2.0 s`.
 
 ### Phase 1 — Standalone Bridge, Contracts, Audio Tap & SHADOW Recorder
-* Build `bridge/midi_bridge_daemon.py` + `launchd` plist (with atomic `bridge_state.json`, dual `engine`/`ui` socket, `500 ms` dead-engine detect), `Makefile`, `scripts/bootstrap_mac.sh`, `core/protocol.py` (v5), `schemas/*.json`, `audio_tap.py`, and `scripts/record_shadow_session.py`.
-* **Gate:** `scripts/verify_audio_midi.py` confirms hardware + UI direct passthrough survive `kill -9` of engine; headless `pytest` bridge & schema tests pass.
+* Build `bridge/midi_bridge_daemon.py` + `launchd` plist (`ThrottleInterval: 1`, `100 ms` atomic `bridge_state.json`, dual token-authenticated `engine`/`ui` socket, `human_seq` + `250 ms` in-flight race guard, pre-pickup `human_touch_event`, `500 ms` dead-engine detect), `Makefile`, `scripts/bootstrap_mac.sh`, `core/protocol.py` (v5.1), `schemas/*.json`, `audio_tap.py`, and `scripts/record_shadow_session.py`.
+* **Gate:** `scripts/verify_audio_midi.py` confirms hardware + UI direct passthrough survive `kill -9` of engine; headless `pytest` tests prove an `agent_cc_write` arriving `1 ms` after a human move is dropped and pre-pickup movement freezes agent glides.
 * **Start Live SHADOW Recording Immediately:** Record 3–4 real church services in `SHADOW` mode right after Phase 1 completes so Phase 2 has real labeled audio.
 
 ### Phase 2 — Safety Firewall, Sensor-Fused Perception, Offset Learner & WS Server
 * Implement `safety_firewall.py`, `vad_worker.py`, `clap_worker.py`, `scene_classifier.py`, `offset_learner.py`, `rules_manager.py`, `llm_supervisor.py`, `telemetry_store.py`, and authenticated FastAPI WS server (`main.py`).
 * **Quantitative Gates (`pytest` + Phase 1 SHADOW recordings):**
   * Speech-open onset (`-20 dB → 0 dB`): **`< 1.0 s`** (`0` missed pastor speech onsets).
-  * Instrument-open onset (`-16 dB → -2 dB`): **`< 800 ms`**, with **`0` false triggers** in `PRAYER_UNDERSCORE`, during `speech_open`, or on solo guitar tuning, and clean `8 s` auto-release.
+  * Instrument-open onset (`-16 dB → -2 dB`): **`< 800 ms`**, with **`0` false triggers** in `PRAYER_UNDERSCORE` or on solo guitar tuning, duck-capped opening (`-6 dB`) during speech-over-intro, and clean `8 s` auto-release.
   * Tier-1 50 Hz loop latency: target `p95 < 5 ms`, hard gate **`p99 <= 25 ms`**; watchdog drops agent writes to `SHADOW` without interrupting bridge passthrough.
   * Anti-feedback: cuts stationary howl `< 400 ms` with escalation; `0` false triggers on synth pad bleed or clean vocals.
   * Learner & human override invariance: human-set volume/reverb moves `0.00 dB` while human offset is active (even with conditional rules active, weight updates, and varying `phi`), and clears smoothly at `4 dB/s` on phase change.
