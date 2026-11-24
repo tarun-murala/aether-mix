@@ -1,0 +1,86 @@
+{
+  "schema_version": 5,
+  "calibrated_at": null,
+  "firewall": {
+    "touch_lock_seconds": 15.0,
+    "echo_suppress_ms": 200,
+    "transition_instrument_trim_db": -4.0,
+    "speech_open_vad_min": 0.70,
+    "speech_open_snr_db": 6.0,
+    "speech_open_hold_spoken_ms": 150,
+    "speech_open_hold_worship_ms": 400,
+    "speech_open_release_silence_s": 3.0,
+    "instrument_open_silent_norm_db": -30.0,
+    "instrument_open_silent_min_s": 3.0,
+    "instrument_open_active_norm_db": -12.0,
+    "instrument_open_hold_ms": 200,
+    "instrument_open_ensemble_window_s": 1.0,
+    "instrument_open_max_hold_s": 8.0,
+    "duck_depth_db": -6.0,
+    "duck_snr_spoken_db": 3.0,
+    "duck_targets_by_phase": {
+      "SPOKEN_WORD": ["instrument_pad"],
+      "PRAYER_UNDERSCORE": ["instrument_pad"],
+      "TRANSITION": ["instrument_pad"],
+      "WORSHIP_LOW": ["instrument_pad", "instrument_guitar", "instrument_band"],
+      "WORSHIP_HIGH": ["instrument_pad", "instrument_guitar", "instrument_band"]
+    },
+    "slew_protect_down_db_per_sec": 48.0,
+    "slew_speech_open_up_db_per_sec": 48.0,
+    "slew_instrument_open_up_db_per_sec": 24.0,
+    "slew_duck_release_up_db_per_sec": 8.0,
+    "slew_musical_db_per_sec": 4.0,
+    "slew_handover_db_per_sec": 2.0,
+    "feedback_peak_above_floor_db": 14.0,
+    "feedback_growth_db": 2.0,
+    "feedback_hold_ms": 250,
+    "feedback_cut_step_db": -4.0,
+    "feedback_max_cut_db": -16.0,
+    "feedback_release_delay_s": 5.0,
+    "feedback_release_rate_db_per_sec": 1.0,
+    "watchdog_max_tick_ms": 50.0,
+    "watchdog_max_consecutive_late": 5
+  },
+  "phase_target_lufs": {
+    "SPOKEN_WORD": -21.0,
+    "PRAYER_UNDERSCORE": -24.0,
+    "WORSHIP_LOW": -17.0,
+    "WORSHIP_HIGH": -13.0
+  },
+  "phase_baselines_db": {
+    "SPOKEN_WORD":       {"ch1_pastor": 0.0,   "ch2_lead_vox": -20.0, "ch3_bv1": -24.0, "ch4_bv2": -24.0, "ch5_keys": -16.0, "ch7_guitars": -16.0, "ch9_drums": -16.0},
+    "PRAYER_UNDERSCORE": {"ch1_pastor": 0.0,   "ch2_lead_vox": -18.0, "ch3_bv1": -24.0, "ch4_bv2": -24.0, "ch5_keys": -10.0, "ch7_guitars": -16.0, "ch9_drums": -16.0},
+    "WORSHIP_LOW":       {"ch1_pastor": -18.0, "ch2_lead_vox": 0.0,   "ch3_bv1": -8.0,  "ch4_bv2": -8.0,  "ch5_keys": -4.0,  "ch7_guitars": -6.0,  "ch9_drums": -12.0},
+    "WORSHIP_HIGH":      {"ch1_pastor": -20.0, "ch2_lead_vox": 0.0,   "ch3_bv1": -5.0,  "ch4_bv2": -5.0,  "ch5_keys": -3.0,  "ch7_guitars": -4.0,  "ch9_drums": -2.0}
+  },
+  "phase_reverb_baselines_db": {
+    "SPOKEN_WORD":       {"ch1_pastor": -36.0, "ch2_lead_vox": -24.0},
+    "PRAYER_UNDERSCORE": {"ch1_pastor": -20.0, "ch2_lead_vox": -14.0},
+    "WORSHIP_LOW":       {"ch1_pastor": -24.0, "ch2_lead_vox": -10.0},
+    "WORSHIP_HIGH":      {"ch1_pastor": -30.0, "ch2_lead_vox": -8.0}
+  },
+  "learned_rules": [
+    {
+      "id": "rule_001",
+      "description": "Keep keys softer under prayer",
+      "phase": "PRAYER_UNDERSCORE",
+      "channel_id": "ch5_keys",
+      "parameter": "vol_db_offset",
+      "value": -3.0,
+      "condition": null,
+      "enabled": true,
+      "source": "operator_confirmed"
+    },
+    {
+      "id": "rule_002",
+      "description": "Attenuate backup vocals whenever pastor speaks",
+      "phase": "ANY",
+      "channel_id": "ch3_bv1",
+      "parameter": "conditional_attenuate",
+      "value": -24.0,
+      "condition": {"when_channel": "ch1_pastor", "predicate": "speech_open"},
+      "enabled": true,
+      "source": "operator_confirmed"
+    }
+  ]
+}

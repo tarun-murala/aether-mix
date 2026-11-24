@@ -1,0 +1,47 @@
+[project]
+name = "aethermix-engine"
+version = "0.5.1"
+description = "Autonomous Agentic Live Sound Engineer for Apple MainStage"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "numpy>=1.26.0",
+    "scipy>=1.13.0",
+    "httpx>=0.27.0",
+    "websockets>=13.0",
+]
+
+[project.optional-dependencies]
+audio = [
+    "sounddevice>=0.5.0",
+    "python-rtmidi>=1.5.8",
+    "soundfile>=0.12.1",
+]
+ml = [
+    "onnxruntime>=1.19.0",
+    "torch>=2.4.0",
+    "transformers>=4.45.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["..", "."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

@@ -1,0 +1,82 @@
+name: AetherMix
+options:
+  bundleIdPrefix: com.aethermix
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    MARKETING_VERSION: "5.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    PRODUCT_NAME: AetherMix
+
+targets:
+  AetherMixCore:
+    type: library.static
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/AetherMix/Models
+      - path: Sources/AetherMix/Services
+      - path: Sources/AetherMix/Views
+    settings:
+      base:
+        PRODUCT_NAME: AetherMixCore
+        PRODUCT_MODULE_NAME: AetherMixCore
+        SWIFT_VERSION: "6.0"
+
+  AetherMix:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/AetherMix/App
+    dependencies:
+      - target: AetherMixCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aethermix.app
+        INFOPLIST_KEY_CFBundleDisplayName: AetherMix
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 AetherMix. All rights reserved."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "AetherMix requires Microphone / CoreAudio input permission to read pre-fader audio taps from BlackHole 16ch for live sound mixing telemetry and safety protection."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "AetherMix optionally uses on-device Apple Speech recognition during rehearsals to transcribe spoken mix critiques into the supervisory LLM."
+        ENABLE_HARDENED_RUNTIME: true
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: Info.plist
+      properties:
+        CFBundleName: AetherMix
+        CFBundleDisplayName: AetherMix
+        CFBundleIdentifier: com.aethermix.app
+        CFBundleShortVersionString: "5.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "15.0"
+        NSMicrophoneUsageDescription: "AetherMix requires Microphone / CoreAudio input permission to read pre-fader audio taps from BlackHole 16ch for live sound mixing telemetry and safety protection."
+        NSSpeechRecognitionUsageDescription: "AetherMix optionally uses on-device Apple Speech recognition during rehearsals to transcribe spoken mix critiques into the supervisory LLM."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: AetherMix.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.device.audio-input: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+
+  AetherMixTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests/AetherMixTests
+    dependencies:
+      - target: AetherMixCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aethermix.tests
+        SWIFT_VERSION: "6.0"

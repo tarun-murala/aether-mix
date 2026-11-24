@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Runtime storage & local secrets
+engine/storage/telemetry.db*
+engine/storage/rule_backups/
+engine/storage/shadow_recordings/
+recordings/
+*.wav
+*.flac
+
+# Swift / Xcode
+macos-app/.build/
+macos-app/.swiftpm/
+macos-app/AetherMix.xcodeproj/
+.DS_Store

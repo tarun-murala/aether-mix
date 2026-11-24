@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aethermix.midibridge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>__REPO_ROOT__/bridge/midi_bridge_daemon.py</string>
+        <string>--service-plan</string>
+        <string>__REPO_ROOT__/engine/schemas/service_plan.json</string>
+        <string>--socket</string>
+        <string>__HOME__/.aethermix/bridge.sock</string>
+        <string>--token-path</string>
+        <string>__HOME__/.aethermix/session.token</string>
+        <string>--state-path</string>
+        <string>__HOME__/.aethermix/bridge_state.json</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.aethermix/bridge.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.aethermix/bridge.stderr.log</string>
+</dict>
+</plist>
