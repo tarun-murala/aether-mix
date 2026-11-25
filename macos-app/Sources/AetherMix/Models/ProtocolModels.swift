@@ -267,13 +267,19 @@ public struct TaperPoint: Codable, Sendable, Equatable, Hashable {
 
 public enum TaperMath {
     public static let defaultVolTaper: [TaperPoint] = [
+        // Measured against MainStage's native channel-strip fader law (volume mapped Absolute, -inf..+6 dB).
         TaperPoint(cc: 0, db: nil),
-        TaperPoint(cc: 1, db: -60.0),
-        TaperPoint(cc: 16, db: -36.0),
-        TaperPoint(cc: 32, db: -24.0),
-        TaperPoint(cc: 64, db: -12.0),
-        TaperPoint(cc: 96, db: 0.0),
-        TaperPoint(cc: 114, db: 6.0),
+        TaperPoint(cc: 1, db: -78.2),
+        TaperPoint(cc: 4, db: -54.1),
+        TaperPoint(cc: 8, db: -42.1),
+        TaperPoint(cc: 16, db: -30.1),
+        TaperPoint(cc: 24, db: -23.0),
+        TaperPoint(cc: 32, db: -18.0),
+        TaperPoint(cc: 48, db: -11.0),
+        TaperPoint(cc: 64, db: -6.0),
+        TaperPoint(cc: 80, db: -2.1),
+        TaperPoint(cc: 96, db: 1.1),
+        TaperPoint(cc: 112, db: 3.7),
         TaperPoint(cc: 127, db: 6.0)
     ]
 

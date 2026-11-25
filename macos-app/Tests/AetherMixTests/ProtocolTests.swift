@@ -196,20 +196,20 @@ struct ProtocolTests {
     func canonicalTaperMathMatchesProtocolPy() {
         #expect(TaperMath.ccToDb(0).isInfinite)
         #expect(TaperMath.ccToDb(0) < 0)
-        #expect(abs(TaperMath.ccToDb(1) - (-60.0)) < 1e-6)
-        #expect(abs(TaperMath.ccToDb(64) - (-12.0)) < 1e-6)
-        #expect(abs(TaperMath.ccToDb(96) - 0.0) < 1e-6)
-        #expect(abs(TaperMath.ccToDb(114) - 6.0) < 1e-6)
+        #expect(abs(TaperMath.ccToDb(1) - (-78.2)) < 1e-6)
+        #expect(abs(TaperMath.ccToDb(64) - (-6.0)) < 1e-6)
+        #expect(abs(TaperMath.ccToDb(96) - 1.1) < 1e-6)
+        #expect(abs(TaperMath.ccToDb(112) - 3.7) < 1e-6)
         #expect(abs(TaperMath.ccToDb(127) - 6.0) < 1e-6)
 
         #expect(TaperMath.dbToCC(-.infinity) == 0)
-        #expect(TaperMath.dbToCC(-65.0) == 0)
-        #expect(TaperMath.dbToCC(-60.0) == 1)
-        #expect(TaperMath.dbToCC(-12.0) == 64)
-        #expect(TaperMath.dbToCC(0.0) == 96)
-        // Top plateau inverse MUST return lowest CC reaching +6.0 dB (CC 114)
-        #expect(TaperMath.dbToCC(6.0) == 114)
-        #expect(TaperMath.dbToCC(9.0) == 114)
+        #expect(TaperMath.dbToCC(-90.0) == 0)
+        #expect(TaperMath.dbToCC(-78.2) == 1)
+        #expect(TaperMath.dbToCC(-6.0) == 64)
+        #expect(TaperMath.dbToCC(1.1) == 96)
+        // Top of range: +6.0 dB is only reached at CC 127 on the MainStage-measured taper
+        #expect(TaperMath.dbToCC(6.0) == 127)
+        #expect(TaperMath.dbToCC(9.0) == 127)
     }
 
     // MARK: - 4. MeterStore Isolated High-Frequency Updates

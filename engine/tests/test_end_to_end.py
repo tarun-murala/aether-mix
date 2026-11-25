@@ -334,13 +334,13 @@ def test_all_rpcs_critique_preview_promote_and_safe_update_lock(tmp_path: Path) 
         assert _ws_rpc(ws, "capture_input_nominals", {"group": "band", "duration_s": 0.2}, "req-cal3")["type"] == "ack"
         assert _ws_rpc(ws, "capture_bleed_floor", {"duration_s": 0.2}, "req-cal4")["type"] == "ack"
 
-        bridge._state.last_sent_cc["ch9_drums:vol"] = 96  # 0.0 dB
+        bridge._state.last_sent_cc["ch9_drums:vol"] = 96  # +1.1 dB on MainStage-measured taper
         r_base = _ws_rpc(
             ws, "capture_baseline", {"phase": "WORSHIP_HIGH", "quick_derive_others": True}, "req-cal5"
         )
         assert r_base["type"] == "ack" and r_base["payload"]["data"]["calibrated_at"] is not None
-        assert engine.rules.phase_baselines_db[ServicePhase.WORSHIP_HIGH]["ch9_drums"] == 0.0
-        assert engine.rules.phase_baselines_db[ServicePhase.WORSHIP_LOW]["ch9_drums"] == -10.0
+        assert engine.rules.phase_baselines_db[ServicePhase.WORSHIP_HIGH]["ch9_drums"] == pytest.approx(1.1, abs=0.05)
+        assert engine.rules.phase_baselines_db[ServicePhase.WORSHIP_LOW]["ch9_drums"] == pytest.approx(-8.9, abs=0.05)
 
         assert _ws_rpc(ws, "midi_learn_pulse", {"channel_id": "ch5_keys", "control": "vol"}, "req-mlp")["type"] == "ack"
         assert ("ch5_keys", "vol") in bridge.midi_learn_pulses

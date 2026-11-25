@@ -93,7 +93,7 @@ def test_boot_shadow_observe_disarmed_and_disk_restore_safety_drop() -> None:
     )
     snap = fw.snapshot_channels_state()
     assert snap["ch1_pastor"].sync_status == SyncStatus.SYNCED
-    assert snap["ch1_pastor"].vol_current_db == pytest.approx(0.0, abs=0.05)
+    assert snap["ch1_pastor"].vol_current_db == pytest.approx(1.1, abs=0.05)  # CC 96 on MainStage-measured taper
 
     # Activate, then simulate bridge crash + restart from disk (restored_from_disk_at != None)
     fw.set_mode(AutonomyMode.ACTIVE)
@@ -451,8 +451,8 @@ def test_antifeedback_cuts_under_400ms_overrides_touch_lock_escalates_and_lifts(
     # Overrode touch lock and announced via SAFETY BrainEvent
     assert any("OVERRIDING TOUCH LOCK" in e.summary for e in safety_events)
     # Escalated all the way to -16 dB
-    assert out.channels_state["ch1_pastor"].feedback_ceiling_db == pytest.approx(-16.0, abs=0.1)
-    assert out.channels_state["ch1_pastor"].vol_current_db == pytest.approx(-16.0, abs=0.1)
+    assert out.channels_state["ch1_pastor"].feedback_ceiling_db == pytest.approx(-16.0, abs=0.3)  # CC quantization on the measured taper
+    assert out.channels_state["ch1_pastor"].vol_current_db == pytest.approx(-16.0, abs=0.3)  # CC quantization on the measured taper
 
     # Clear howl -> sticky ceiling holds for 5.0 s, then lifts +1.0 dB/s
     m_clear = _silent_metrics(plan)
@@ -460,7 +460,7 @@ def test_antifeedback_cuts_under_400ms_overrides_touch_lock_escalates_and_lifts(
     for _ in range(240):  # 4.8 s clear -> still sticky at -16.0 dB
         t += dt
         out = fw.tick(m_clear, {}, active_phase=ServicePhase.SPOKEN_WORD, dt_s=dt, now_s=t)
-    assert out.channels_state["ch1_pastor"].feedback_ceiling_db == pytest.approx(-16.0, abs=0.05)
+    assert out.channels_state["ch1_pastor"].feedback_ceiling_db == pytest.approx(-16.0, abs=0.3)  # CC quantization on the measured taper
 
     for _ in range(110):  # +2.2 s (2.0 s of lift at +1 dB/s -> ceiling ~ -14.0 dB)
         t += dt

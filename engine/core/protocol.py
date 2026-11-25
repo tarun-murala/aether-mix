@@ -145,13 +145,19 @@ RULE_PARAMETER_BOUNDS: dict[RuleParameter, tuple[float, float]] = {
 }
 
 DEFAULT_VOL_TAPER: list[tuple[int, float | None]] = [
+    # Measured against MainStage's native channel-strip fader law (volume mapped Absolute, -inf..+6 dB).
     (0, None),
-    (1, -60.0),
-    (16, -36.0),
-    (32, -24.0),
-    (64, -12.0),
-    (96, 0.0),
-    (114, 6.0),
+    (1, -78.2),
+    (4, -54.1),
+    (8, -42.1),
+    (16, -30.1),
+    (24, -23.0),
+    (32, -18.0),
+    (48, -11.0),
+    (64, -6.0),
+    (80, -2.1),
+    (96, 1.1),
+    (112, 3.7),
     (127, 6.0),
 ]
 
