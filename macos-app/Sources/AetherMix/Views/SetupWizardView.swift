@@ -1,4 +1,5 @@
 import CoreAudio
+import CoreMIDI
 import SwiftUI
 
 /// Guided Setup & 4-Step Sequential Soundcheck Calibration Wizard (SPEC §5.2 & §8):
@@ -17,7 +18,8 @@ public struct SetupWizardView: View {
 
     @State private var currentStep: Int = 0
     @State private var detectedAudioDevices: [String] = []
-    @State private var mainstageExclusiveConfirmed: Bool = false
+    @AppStorage("aethermix.mainstageExclusiveConfirmed") private var mainstageExclusiveConfirmed: Bool = false
+    @State private var exclusivityReport: String?
     @State private var mutePolarityMap: [String: Bool] = [
         "ch2_lead_vox": true,
         "ch3_bv1": true,
@@ -383,7 +385,37 @@ public struct SetupWizardView: View {
                 Toggle("I have verified that all direct hardware MIDI controller assignments are removed in MainStage (Concert Level).", isOn: $mainstageExclusiveConfirmed)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(MissionTheme.textPrimary)
+
+                HStack(spacing: 10) {
+                    Button("Auto-Verify") { runExclusivityScan() }
+                        .buttonStyle(.borderedProminent)
+                    Button("Open MainStage") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/MainStage.app"))
+                    }
+                    if mainstageExclusiveConfirmed {
+                        Button("Reset") { mainstageExclusiveConfirmed = false; exclusivityReport = nil }
+                    }
+                }
+                if let report = exclusivityReport {
+                    Text(report)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(MissionTheme.cyanTarget)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+        }
+    }
+
+    /// Scans CoreMIDI for physical (non-virtual, non-IAC, non-AetherMix) sources. MainStage's concert file
+    /// can't be inspected, so: no hardware sources => dual-path is impossible => verified automatically.
+    /// Otherwise the user must confirm the listed devices are unassigned in MainStage.
+    private func runExclusivityScan() {
+        let hardware = MIDISourceScanner.physicalSourceNames()
+        if hardware.isEmpty {
+            mainstageExclusiveConfirmed = true
+            exclusivityReport = "No physical MIDI controllers attached — no direct MainStage path can exist. Verified."
+        } else {
+            exclusivityReport = "Physical MIDI sources: \(hardware.joined(separator: ", ")). In MainStage (Layout → Concert Inspector → MIDI Inputs) uncheck these so only the AetherMix port feeds MainStage, then tick the box above."
         }
     }
 
@@ -693,6 +725,26 @@ public enum CoreAudioDeviceScanner {
             if status == noErr, let unwrapped = cfName?.takeUnretainedValue() {
                 names.append(unwrapped as String)
             }
+        }
+        return names
+    }
+}
+
+// MARK: - CoreMIDI Physical Source Scanner
+
+public enum MIDISourceScanner {
+    public static func physicalSourceNames() -> [String] {
+        var names: [String] = []
+        for i in 0..<MIDIGetNumberOfSources() {
+            let src = MIDIGetSource(i)
+            var entity = MIDIEntityRef()
+            guard MIDIEndpointGetEntity(src, &entity) == noErr, entity != 0 else { continue } // virtual endpoint
+            var cfName: Unmanaged<CFString>?
+            guard MIDIObjectGetStringProperty(src, kMIDIPropertyDisplayName, &cfName) == noErr,
+                  let name = cfName?.takeRetainedValue() as String? else { continue }
+            let lower = name.lowercased()
+            if lower.contains("aethermix") || lower.contains("iac") || lower.contains("network") { continue }
+            names.append(name)
         }
         return names
     }
