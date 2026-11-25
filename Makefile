@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 UV := $(shell command -v uv || echo $$HOME/.local/bin/uv)
 PYTHON := engine/.venv/bin/python
 
-.PHONY: setup setup-ml models install-bridge uninstall-bridge test test-py test-swift spike verify simulate demo build-app dev clean
+.PHONY: setup setup-ml models install-bridge uninstall-bridge install-prereqs check-setup test test-py test-swift spike verify simulate demo soundpack live-mainstage audition-soundpack build-app dmg dev clean
 
 setup:
 	cd engine && $(UV) sync --extra dev --extra audio
@@ -47,8 +47,26 @@ simulate-live:
 demo:
 	$(PYTHON) scripts/run_demo.py
 
+soundpack:
+	$(PYTHON) scripts/build_soundpack.py
+
+live-mainstage:
+	$(PYTHON) scripts/play_mainstage_pack.py
+
+audition-soundpack:
+	$(PYTHON) scripts/play_mainstage_pack.py --audition --mode jukebox
+
+install-prereqs:
+	./scripts/install_prereqs.sh
+
+check-setup:
+	python3 scripts/check_setup.py --test-ollama
+
 build-app:
 	cd macos-app && swift build -c release
+
+dmg:
+	./scripts/build_dmg.sh
 
 dev:
 	@echo "Starting standalone MIDI bridge and AetherMix engine (SHADOW_OBSERVE)..."

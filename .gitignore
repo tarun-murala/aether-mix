@@ -14,8 +14,10 @@ recordings/
 *.wav
 *.flac
 
-# Swift / Xcode
+# Swift / Xcode / Packaging
 macos-app/.build/
 macos-app/.swiftpm/
 macos-app/AetherMix.xcodeproj/
+dist/
+*.dmg
 .DS_Store

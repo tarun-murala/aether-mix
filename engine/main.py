@@ -67,7 +67,17 @@ logger = logging.getLogger("aethermix.engine")
 
 DEFAULT_SERVICE_PLAN_PATH = REPO_ROOT / "engine" / "schemas" / "service_plan.json"
 DEFAULT_MIXING_RULES_PATH = REPO_ROOT / "engine" / "schemas" / "mixing_rules.json"
-DEFAULT_BACKUP_DIR = REPO_ROOT / "engine" / "storage" / "rule_backups"
+_IS_APP_BUNDLE = ".app/" in str(REPO_ROOT)
+DEFAULT_BACKUP_DIR = (
+    Path.home() / ".aethermix" / "storage" / "rule_backups"
+    if _IS_APP_BUNDLE
+    else REPO_ROOT / "engine" / "storage" / "rule_backups"
+)
+DEFAULT_ENGINE_DB_PATH = (
+    Path.home() / ".aethermix" / "storage" / "telemetry.db"
+    if _IS_APP_BUNDLE
+    else DEFAULT_DB_PATH
+)
 
 
 class AetherMixEngine:
@@ -1314,7 +1324,7 @@ def build_engine_from_files(
     headless: bool = False,
     bridge_socket_path: Path = DEFAULT_BRIDGE_SOCKET_PATH,
     token_path: Path = DEFAULT_TOKEN_PATH,
-    db_path: Path = DEFAULT_DB_PATH,
+    db_path: Path = DEFAULT_ENGINE_DB_PATH,
 ) -> AetherMixEngine:
     plan = ServicePlan.model_validate_json(service_plan_path.read_text(encoding="utf-8"))
     rules = MixingRules.model_validate_json(mixing_rules_path.read_text(encoding="utf-8"))
@@ -1337,7 +1347,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mixing-rules", type=Path, default=DEFAULT_MIXING_RULES_PATH)
     parser.add_argument("--bridge-socket", type=Path, default=DEFAULT_BRIDGE_SOCKET_PATH)
     parser.add_argument("--token-path", type=Path, default=DEFAULT_TOKEN_PATH)
-    parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
+    parser.add_argument("--db-path", type=Path, default=DEFAULT_ENGINE_DB_PATH)
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--headless", action="store_true", help="Run without PortAudio/CLAP hardware")

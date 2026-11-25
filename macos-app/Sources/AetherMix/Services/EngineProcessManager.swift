@@ -131,7 +131,7 @@ public final class EngineProcessManager {
         let templateURL = repoRootURL.appendingPathComponent("scripts/com.aethermix.midibridge.plist")
         let targetURL = AetherMixProtocol.defaultLaunchAgentPath
         let homePath = FileManager.default.homeDirectoryForCurrentUser.path
-        let pythonPath = repoRootURL.appendingPathComponent("engine/.venv/bin/python").path
+        let pythonPath = Self.resolvePythonPath(runtimeRoot: repoRootURL)
 
         do {
             let template: String
@@ -200,15 +200,24 @@ public final class EngineProcessManager {
             return
         }
 
-        let venvPython = repoRootURL.appendingPathComponent("engine/.venv/bin/python")
-        let planPath = repoRootURL.appendingPathComponent("engine/schemas/service_plan.json").path
-        let rulesPath = repoRootURL.appendingPathComponent("engine/schemas/mixing_rules.json").path
+        let resolvedPython = Self.resolvePythonPath(runtimeRoot: repoRootURL)
+        let (planPath, rulesPath) = Self.resolveConfigPaths(runtimeRoot: repoRootURL, isAppBundle: launchContext == .standaloneApp)
 
         let proc = Process()
         proc.currentDirectoryURL = repoRootURL
 
-        if FileManager.default.isExecutableFile(atPath: venvPython.path) {
-            proc.executableURL = venvPython
+        // Finder-launched .app bundles have minimal PATH; include Homebrew, uv, and Ollama paths.
+        var env = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let extraPaths = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin"]
+        let existingPath = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
+        let existingPyPath = env["PYTHONPATH"]
+        env["PYTHONPATH"] = existingPyPath.map { "\(repoRootURL.path):\($0)" } ?? repoRootURL.path
+        proc.environment = env
+
+        if FileManager.default.isExecutableFile(atPath: resolvedPython) {
+            proc.executableURL = URL(fileURLWithPath: resolvedPython)
             proc.arguments = [
                 mainPy.path,
                 "--service-plan", planPath,
@@ -362,7 +371,54 @@ public final class EngineProcessManager {
         return .terminalDev
     }
 
+    private static func resolveConfigPaths(runtimeRoot: URL, isAppBundle: Bool) -> (String, String) {
+        let bundledPlan = runtimeRoot.appendingPathComponent("engine/schemas/service_plan.json")
+        let bundledRules = runtimeRoot.appendingPathComponent("engine/schemas/mixing_rules.json")
+        guard isAppBundle else {
+            return (bundledPlan.path, bundledRules.path)
+        }
+        let cfgDir = AetherMixProtocol.defaultAetherMixDirectory.appendingPathComponent("config", isDirectory: true)
+        let userPlan = cfgDir.appendingPathComponent("service_plan.json")
+        let userRules = cfgDir.appendingPathComponent("mixing_rules.json")
+        let fm = FileManager.default
+        try? fm.createDirectory(at: cfgDir, withIntermediateDirectories: true)
+        if !fm.fileExists(atPath: userPlan.path), fm.fileExists(atPath: bundledPlan.path) {
+            try? fm.copyItem(at: bundledPlan, to: userPlan)
+        }
+        if !fm.fileExists(atPath: userRules.path), fm.fileExists(atPath: bundledRules.path) {
+            try? fm.copyItem(at: bundledRules, to: userRules)
+        }
+        return (
+            fm.fileExists(atPath: userPlan.path) ? userPlan.path : bundledPlan.path,
+            fm.fileExists(atPath: userRules.path) ? userRules.path : bundledRules.path
+        )
+    }
+
+    private static func resolvePythonPath(runtimeRoot: URL) -> String {
+        let candidates = [
+            runtimeRoot.appendingPathComponent("engine/.venv/bin/python").path,
+            AetherMixProtocol.defaultAetherMixDirectory.appendingPathComponent("venv/bin/python").path,
+        ]
+        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+            return path
+        }
+        return candidates[0]
+    }
+
     private static func discoverRepoRoot() -> URL {
+        // 1. Inside installed AetherMix.app/Contents/Resources/runtime
+        if let resURL = Bundle.main.resourceURL {
+            let bundledRuntime = resURL.appendingPathComponent("runtime", isDirectory: true)
+            if FileManager.default.fileExists(atPath: bundledRuntime.appendingPathComponent("engine/main.py").path) {
+                return bundledRuntime
+            }
+        }
+        // 2. Installed /Applications/AetherMix.app fallback
+        let appRuntime = URL(fileURLWithPath: "/Applications/AetherMix.app/Contents/Resources/runtime", isDirectory: true)
+        if FileManager.default.fileExists(atPath: appRuntime.appendingPathComponent("engine/main.py").path) {
+            return appRuntime
+        }
+        // 3. Development repo walk-up from current working directory
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         var cursor = cwd
         for _ in 0..<5 {

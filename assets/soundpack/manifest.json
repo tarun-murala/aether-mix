@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "sample_rate": 48000,
+  "channel_map": {
+    "ch1": "Pastor Mic (common/pastor_speech.ogg)",
+    "ch2": "Lead Vocal (<tune>/lead_vox.ogg)",
+    "ch3": "Backup Vocal 1 (<tune>/bv1.ogg)",
+    "ch4": "Backup Vocal 2 (<tune>/bv2.ogg)",
+    "ch5_6": "Keys / Pad / Organ / Piano Stereo (<tune>/keys.ogg)",
+    "ch7_8": "Guitars Stereo (<tune>/guitars.ogg)",
+    "ch9_10": "Drums Stereo (<tune>/drums.ogg)",
+    "ch11_12": "Bass Stereo (<tune>/bass.ogg)",
+    "ch13_14": "Room Mics / Applause Stereo (common/room_applause.ogg)",
+    "ch15_16": "Master Return Tap (routed back from MainStage or engine monitor)"
+  },
+  "common": {
+    "pastor_speech": "common/pastor_speech.ogg",
+    "room_applause": "common/room_applause.ogg"
+  },
+  "tunes": [
+    {
+      "id": "01_morning_grace",
+      "title": "Morning Grace",
+      "genre": "Warm Worship Ballad",
+      "bpm": 72.0,
+      "key": "G Major",
+      "bars": 8,
+      "duration_s": 26.667,
+      "recommended_phase": "WORSHIP_LOW",
+      "description": "Grand piano arpeggios, warm strings/pad, fingerpicked acoustic & clean electric swells, soft ballad drums, fingered bass, and expressive 3-part harmonies.",
+      "stems": {
+        "keys": "01_morning_grace/keys.ogg",
+        "guitars": "01_morning_grace/guitars.ogg",
+        "drums": "01_morning_grace/drums.ogg",
+        "bass": "01_morning_grace/bass.ogg",
+        "lead_vox": "01_morning_grace/lead_vox.ogg",
+        "bv1": "01_morning_grace/bv1.ogg",
+        "bv2": "01_morning_grace/bv2.ogg"
+      }
+    },
+    {
+      "id": "02_anthem_rise",
+      "title": "Anthem Rise",
+      "genre": "Modern Pop-Rock Anthem",
+      "bpm": 124.0,
+      "key": "D Major",
+      "bars": 16,
+      "duration_s": 30.968,
+      "recommended_phase": "WORSHIP_HIGH",
+      "description": "Driving bright piano octaves, dotted-eighth delay electric riff, overdriven rhythm guitars, energetic rock drum kit, picked bass, and anthemic chorus harmonies.",
+      "stems": {
+        "keys": "02_anthem_rise/keys.ogg",
+        "guitars": "02_anthem_rise/guitars.ogg",
+        "drums": "02_anthem_rise/drums.ogg",
+        "bass": "02_anthem_rise/bass.ogg",
+        "lead_vox": "02_anthem_rise/lead_vox.ogg",
+        "bv1": "02_anthem_rise/bv1.ogg",
+        "bv2": "02_anthem_rise/bv2.ogg"
+      }
+    },
+    {
+      "id": "03_sunday_soul",
+      "title": "Sunday Soul",
+      "genre": "Gospel Rhodes & Organ Groove",
+      "bpm": 92.0,
+      "key": "Bb Major",
+      "bars": 8,
+      "duration_s": 20.87,
+      "recommended_phase": "WORSHIP_HIGH",
+      "description": "Soulful Fender Rhodes comping, Hammond B3 organ swells, funky jazz-clean guitar chords, pocket gospel drums with ghost notes, walking bass, and rich gospel choir.",
+      "stems": {
+        "keys": "03_sunday_soul/keys.ogg",
+        "guitars": "03_sunday_soul/guitars.ogg",
+        "drums": "03_sunday_soul/drums.ogg",
+        "bass": "03_sunday_soul/bass.ogg",
+        "lead_vox": "03_sunday_soul/lead_vox.ogg",
+        "bv1": "03_sunday_soul/bv1.ogg",
+        "bv2": "03_sunday_soul/bv2.ogg"
+      }
+    },
+    {
+      "id": "04_acoustic_campfire",
+      "title": "Acoustic Campfire",
+      "genre": "Unplugged Folk Acoustic",
+      "bpm": 108.0,
+      "key": "C Major",
+      "bars": 12,
+      "duration_s": 26.667,
+      "recommended_phase": "WORSHIP_LOW",
+      "description": "Strummed steel acoustic guitar, nylon counter-melody, upright double bass, organic shaker/tambourine/rimshot percussion, soft acoustic piano & warm strings.",
+      "stems": {
+        "keys": "04_acoustic_campfire/keys.ogg",
+        "guitars": "04_acoustic_campfire/guitars.ogg",
+        "drums": "04_acoustic_campfire/drums.ogg",
+        "bass": "04_acoustic_campfire/bass.ogg",
+        "lead_vox": "04_acoustic_campfire/lead_vox.ogg",
+        "bv1": "04_acoustic_campfire/bv1.ogg",
+        "bv2": "04_acoustic_campfire/bv2.ogg"
+      }
+    },
+    {
+      "id": "05_still_waters",
+      "title": "Still Waters",
+      "genre": "Ambient Prayer & Cinematic Pad",
+      "bpm": 66.0,
+      "key": "E Minor",
+      "bars": 8,
+      "duration_s": 29.091,
+      "recommended_phase": "PRAYER_UNDERSCORE",
+      "description": "Lush atmospheric pads, soft felt grand piano chords, ambient echo clean electric arpeggios, cinematic floor-tom heartbeat, fretless/sub bass, and ethereal choir oohs.",
+      "stems": {
+        "keys": "05_still_waters/keys.ogg",
+        "guitars": "05_still_waters/guitars.ogg",
+        "drums": "05_still_waters/drums.ogg",
+        "bass": "05_still_waters/bass.ogg",
+        "lead_vox": "05_still_waters/lead_vox.ogg",
+        "bv1": "05_still_waters/bv1.ogg",
+        "bv2": "05_still_waters/bv2.ogg"
+      }
+    }
+  ]
+}

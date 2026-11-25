@@ -806,6 +806,7 @@ class SafetyFirewall:
         dt_s: float,
         now_s: float,
         events: list[BrainEventPayload],
+        sung_vocals: Mapping[str, bool] | None = None,
     ) -> None:
         fw = self.rules.firewall
         inst_prom_cache: dict[str, np.ndarray] = {}
@@ -869,6 +870,7 @@ class SafetyFirewall:
                                 detected_prom = p_val
                                 # Check for multi-harmonic sung vocal / instrument overtone structure
                                 harmonic_hits = 0
+                                has_octave_overtone = False
                                 for mult_num, mult_den in (
                                     (1, 4),
                                     (1, 3),
@@ -884,9 +886,17 @@ class SafetyFirewall:
                                     if 3 <= hk < spec.size - 3 and abs(hk - k) >= 3:
                                         lo_h = max(0, hk - 1)
                                         hi_h = min(spec.size, hk + 2)
-                                        if float(np.max(prom[lo_h:hi_h])) > 9.0:
+                                        h_prom = float(np.max(prom[lo_h:hi_h]))
+                                        if h_prom > 8.5:
                                             harmonic_hits += 1
-                                is_harmonic_vocal = harmonic_hits >= 2
+                                            if (mult_num, mult_den) in ((2, 1), (1, 2), (3, 1), (1, 3)):
+                                                has_octave_overtone = True
+                                # Pure PA feedback is a single sinusoid (0 harmonics); sustained
+                                # vocal fundamentals (<=1.05 kHz, bin <=22) with a clear octave/fifth
+                                # harmonic or any peak with >=2 harmonics are musical vocals.
+                                is_harmonic_vocal = (harmonic_hits >= 2) or (
+                                    k <= 22 and has_octave_overtone and harmonic_hits >= 1
+                                )
                                 break
 
             if detected_bin is not None:
@@ -905,7 +915,17 @@ class SafetyFirewall:
                 meets_growth = (
                     (growth_mag >= fw.feedback_growth_db) or (growth_prom >= fw.feedback_growth_db)
                 ) and (not is_harmonic_vocal)
-                meets_lockon = (detected_prom > 18.0) and (not is_harmonic_vocal)
+                # Steady held vocal fundamentals (<=1.12 kHz) on an actively singing channel
+                # require actual acoustic growth to trigger; pure high-frequency howls (>1.12 kHz)
+                # or open non-singing mics lock on immediately.
+                is_steady_sung_fundamental = bool((sung_vocals or {}).get(ch_id, False)) and (
+                    detected_bin <= 24
+                )
+                meets_lockon = (
+                    (detected_prom > 18.0)
+                    and (not is_harmonic_vocal)
+                    and (not is_steady_sung_fundamental)
+                )
 
                 if ch_int.fb_hold_s >= hold_target_s - 1e-9 and (meets_growth or meets_lockon):
                     touch_override_note = (
@@ -1245,7 +1265,7 @@ class SafetyFirewall:
         # 2. Update reflexes & anti-feedback
         duck_active = self._update_speech_and_duck(vad_probs, snr_map, dt_s, events)
         self._update_instrument_open(norm_vband_db, dt_s, t, events)
-        self._update_feedback_guards(fft_mag_db, dt_s, t, events)
+        self._update_feedback_guards(fft_mag_db, dt_s, t, events, sung_vocals=sung_vocals)
 
         any_spoken_open = any(
             c.speech_open for c in self._channels.values() if c.config.role == ChannelRole.SPOKEN_PRIMARY
