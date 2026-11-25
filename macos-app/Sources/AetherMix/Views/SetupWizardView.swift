@@ -29,11 +29,14 @@ public struct SetupWizardView: View {
     @State private var calibrationLog: [String] = []
     @State private var completedCalibrationSteps: Set<String> = []
 
+    @State private var checker = DependencyChecker.shared
+
     private let stepTitles = [
-        "1. TCC & Audio",
-        "2. Bridge & MainStage",
-        "3. MIDI & Mute Polarity",
-        "4. Soundcheck Calibration"
+        "1. System Check",
+        "2. TCC & Audio",
+        "3. Bridge",
+        "4. MIDI & Mute",
+        "5. Calibration"
     ]
 
     public init(
@@ -102,9 +105,10 @@ public struct SetupWizardView: View {
             ScrollView {
                 Group {
                     switch currentStep {
-                    case 0: tccAndAudioStep
-                    case 1: bridgeAndMainStageStep
-                    case 2: midiLearnAndMuteStep
+                    case 0: systemCheckStep
+                    case 1: tccAndAudioStep
+                    case 2: bridgeAndMainStageStep
+                    case 3: midiLearnAndMuteStep
                     default: soundcheckCalibrationStep
                     }
                 }
@@ -143,6 +147,129 @@ public struct SetupWizardView: View {
         .onAppear {
             detectedAudioDevices = CoreAudioDeviceScanner.listInputDeviceNames()
             processManager.refreshBridgeLaunchAgentStatus()
+            Task { await checker.refresh(repoRoot: processManager.repoRootURL) }
+        }
+    }
+
+    // MARK: - Step 0: System Check (all external dependencies + live connections)
+
+    private var liveRows: [DependencyCheck] {
+        [
+            DependencyCheck(
+                id: "engine", title: "AI engine (WebSocket 127.0.0.1:8765)",
+                status: wsClient.isConnected ? .ok : .fail,
+                detail: wsClient.isConnected
+                    ? "Connected — launch mode: \(processManager.launchMode.rawValue)."
+                    : (wsClient.lastError ?? processManager.lastStatusMessage ?? "Engine not reachable. Check Python runtime and the Diagnostics log.")
+            ),
+            DependencyCheck(
+                id: "bridge", title: "MIDI bridge (LaunchAgent + socket)",
+                status: bridgeClient.isConnected ? .ok : .fail,
+                detail: bridgeClient.isConnected
+                    ? "Bridge socket connected."
+                    : (processManager.launchAgentInstalled
+                        ? (processManager.launchAgentLoaded ? "Agent loaded but socket not answering — see ~/.aethermix/bridge.stderr.log."
+                                                            : "Plist installed but not loaded in launchd.")
+                        : "LaunchAgent not installed."),
+                fix: bridgeClient.isConnected ? nil : .installBridgeAgent
+            ),
+            DependencyCheck(
+                id: "controller", title: "MainStage MIDI link (AetherMix virtual port)",
+                status: bridgeClient.isConnected ? (bridgeClient.bridgeState.controllerConnected ? .ok : .warn) : .fail,
+                detail: bridgeClient.isConnected
+                    ? (bridgeClient.bridgeState.controllerConnected
+                        ? "Controller/MIDI path active."
+                        : "Bridge is up but no hardware controller detected. In MainStage, set the Concert MIDI input to the AetherMix virtual port.")
+                    : "Needs the bridge first.",
+                critical: false
+            ),
+        ]
+    }
+
+    private var systemCheckStep: some View {
+        let rows = checker.checks + liveRows
+        let failing = rows.filter { $0.critical && $0.status == .fail }.count
+        return VStack(alignment: .leading, spacing: 12) {
+            wizardCard(
+                title: "Dependency & Connection Status",
+                badge: checker.isRefreshing ? "CHECKING…" : (failing == 0 ? "READY" : "\(failing) BLOCKING"),
+                badgeColor: checker.isRefreshing ? MissionTheme.cyanTarget : (failing == 0 ? MissionTheme.emerald : MissionTheme.crimson)
+            ) {
+                HStack(spacing: 10) {
+                    Button(checker.isRefreshing ? "Checking…" : "Re-check") {
+                        processManager.refreshBridgeLaunchAgentStatus()
+                        Task { await checker.refresh(repoRoot: processManager.repoRootURL) }
+                    }
+                    .disabled(checker.isRefreshing)
+
+                    if checker.checks.contains(where: { $0.fix == .runInstaller && $0.status != .ok }) {
+                        Button("Run Full Installer (Terminal)") {
+                            checker.apply(.runInstaller, repoRoot: processManager.repoRootURL, processManager: processManager)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    Spacer()
+                    Text("Model: \(checker.model)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(MissionTheme.textSecondary)
+                }
+                if let msg = checker.fixMessage {
+                    Text(msg)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(MissionTheme.cyanTarget)
+                }
+            }
+
+            ForEach(rows) { row in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: symbol(for: row.status))
+                        .font(.system(size: 15))
+                        .foregroundStyle(color(for: row.status))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.title)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(MissionTheme.textPrimary)
+                        Text(row.detail)
+                            .font(.system(size: 10))
+                            .foregroundStyle(MissionTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if let fix = row.fix, row.status != .ok {
+                        Button(fix.buttonTitle) {
+                            checker.apply(fix, repoRoot: processManager.repoRootURL, processManager: processManager)
+                            if fix == .installBridgeAgent {
+                                Task {
+                                    try? await Task.sleep(for: .seconds(2))
+                                    bridgeClient.connectOnce()
+                                }
+                            }
+                        }
+                        .font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .padding(10)
+                .background(MissionTheme.panelBg, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(color(for: row.status).opacity(0.5), lineWidth: 1))
+            }
+        }
+    }
+
+    private func symbol(for status: CheckStatus) -> String {
+        switch status {
+        case .ok: return "checkmark.circle.fill"
+        case .warn: return "exclamationmark.triangle.fill"
+        case .fail: return "xmark.octagon.fill"
+        case .checking: return "hourglass"
+        }
+    }
+
+    private func color(for status: CheckStatus) -> Color {
+        switch status {
+        case .ok: return MissionTheme.emerald
+        case .warn: return MissionTheme.amber
+        case .fail: return MissionTheme.crimson
+        case .checking: return MissionTheme.cyanTarget
         }
     }
 

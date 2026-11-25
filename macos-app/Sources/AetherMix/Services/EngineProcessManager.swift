@@ -131,7 +131,11 @@ public final class EngineProcessManager {
         let templateURL = repoRootURL.appendingPathComponent("scripts/com.aethermix.midibridge.plist")
         let targetURL = AetherMixProtocol.defaultLaunchAgentPath
         let homePath = FileManager.default.homeDirectoryForCurrentUser.path
-        let pythonPath = Self.resolvePythonPath(runtimeRoot: repoRootURL)
+        guard let pythonPath = Self.resolveExistingPython(runtimeRoot: repoRootURL) else {
+            lastStatusMessage = "Cannot install bridge: no Python runtime with rtmidi found (~/.aethermix/venv). Run the installer from Setup → System Check first."
+            appendLog(stream: "stderr", line: lastStatusMessage ?? "")
+            return
+        }
 
         do {
             let template: String
@@ -214,6 +218,8 @@ public final class EngineProcessManager {
         env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
         let existingPyPath = env["PYTHONPATH"]
         env["PYTHONPATH"] = existingPyPath.map { "\(repoRootURL.path):\($0)" } ?? repoRootURL.path
+        // Never let uv write a .venv inside the signed .app bundle.
+        env["UV_PROJECT_ENVIRONMENT"] = AetherMixProtocol.defaultAetherMixDirectory.appendingPathComponent("venv").path
         proc.environment = env
 
         if FileManager.default.isExecutableFile(atPath: resolvedPython) {
@@ -226,7 +232,7 @@ public final class EngineProcessManager {
         } else {
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             proc.arguments = [
-                "uv", "run", "--project", repoRootURL.appendingPathComponent("engine").path,
+                "uv", "run", "--extra", "audio", "--project", repoRootURL.appendingPathComponent("engine").path,
                 "python", mainPy.path,
                 "--service-plan", planPath,
                 "--mixing-rules", rulesPath
@@ -394,7 +400,13 @@ public final class EngineProcessManager {
         )
     }
 
-    private static func resolvePythonPath(runtimeRoot: URL) -> String {
+    /// Returns the managed Python interpreter only if it actually exists.
+    nonisolated public static func resolveExistingPython(runtimeRoot: URL) -> String? {
+        let candidate = resolvePythonPath(runtimeRoot: runtimeRoot)
+        return FileManager.default.isExecutableFile(atPath: candidate) ? candidate : nil
+    }
+
+    nonisolated private static func resolvePythonPath(runtimeRoot: URL) -> String {
         let candidates = [
             runtimeRoot.appendingPathComponent("engine/.venv/bin/python").path,
             AetherMixProtocol.defaultAetherMixDirectory.appendingPathComponent("venv/bin/python").path,

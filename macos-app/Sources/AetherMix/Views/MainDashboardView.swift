@@ -10,6 +10,7 @@ public struct MainDashboardView: View {
     @State private var showReviewDrawer = false
     @State private var showSetupWizard = false
     @State private var showDiagnosticsDrawer = false
+    @State private var checker = DependencyChecker.shared
 
     private let orderOfService: [ServiceSegment] = ChannelCatalog.defaultOrderOfService
 
@@ -77,6 +78,12 @@ public struct MainDashboardView: View {
         .frame(minWidth: 1280, minHeight: 800)
         .background(MissionTheme.canvasBg)
         .preferredColorScheme(.dark)
+        .task {
+            // First-launch dependency probe: open the wizard on the System Check step if anything critical is missing.
+            try? await Task.sleep(for: .seconds(2))
+            await checker.refresh(repoRoot: processManager.repoRootURL)
+            if !checker.criticalFailures.isEmpty { showSetupWizard = true }
+        }
         .sheet(isPresented: $showRulesDrawer) {
             RulesManagerView(wsClient: wsClient)
         }
