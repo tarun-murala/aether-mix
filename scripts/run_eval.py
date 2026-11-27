@@ -8,6 +8,9 @@
   run             closed-loop headless run through the real engine, scored against manifest/gates.yaml
   build           write one service as a 16-channel WAV + markers CSV for a DAW / BlackHole player
   play            stream one service to BlackHole 16ch in real time (Mode B, MainStage in the loop)
+  live            Mode B scored run: play through MainStage while recording the running engine, then score
+  live-score      re-score a finished live run from its saved recordings
+  prefader-check  sweep a MainStage fader via the bridge and verify the BlackHole 64ch pre-fader tap does not move
   routing-check   verify BlackHole 16ch/64ch and the AetherMix-Live aggregate exist
   closedloop-plan write engine/schemas/service_plan.closedloop.json (taps from BlackHole 64ch)
   report          print a finished run's report.md
@@ -226,6 +229,106 @@ def cmd_play(args: argparse.Namespace) -> int:
     return 0
 
 
+CLOSEDLOOP_PLAN = REPO_ROOT / "engine" / "schemas" / "service_plan.closedloop.json"
+
+
+def _score_live(out_dir: Path, ids: list[str], timelines: dict, meta: dict) -> int:  # type: ignore[type-arg]
+    from engine.core.protocol import MixingRules, ServicePlan
+    from evals.live import LiveRecording, estimate_offset_s, ticklog_from_recording
+    from evals.report import write_reports
+    from evals.scoring import score_run
+
+    services, gates = load_services(sources=load_sources()), load_gates()
+    rules = MixingRules.model_validate_json(RULES.read_text(encoding="utf-8"))
+    plan = ServicePlan.model_validate_json(CLOSEDLOOP_PLAN.read_text(encoding="utf-8"))
+    results, align = [], {}
+    for sid in ids:
+        tl = timelines[sid]
+        rec = LiveRecording.load(out_dir / sid / "live_recording.json.gz")
+        off, r = estimate_offset_s(rec, tl)
+        align[sid] = {"offset_s": round(off, 3), "corr": round(r, 3), "frames": len(rec.frames), **rec.meta}
+        log = ticklog_from_recording(rec, tl, plan, off)
+        log.save_npz(out_dir / sid / "ticks.npz")
+        tl.write_markers_csv(out_dir / sid / "markers.csv")
+        results += score_run(log, tl, gates, rules, services.settle_s)
+    meta = {**meta, "alignment": align}
+    agg = write_reports(out_dir, results, gates, meta)
+    print((out_dir / "report.md").read_text(encoding="utf-8"))
+    print(f"Report: {out_dir / 'report.md'}")
+    return 0 if agg["all_passed"] else 1
+
+
+def cmd_live(args: argparse.Namespace) -> int:
+    import sounddevice as sd  # type: ignore[import-untyped]
+    from evals.live import capture
+
+    services = load_services(sources=load_sources())
+    ids = _svc_ids(args.service, services)
+    timelines = {sid: _build(args, sid) for sid in ids}
+    synthetic = {sid: tl.synthetic_parts for sid, tl in timelines.items()}
+    if any(synthetic.values()) and not args.allow_synthetic:
+        print("refusing: synthetic parts present; pass --allow-synthetic for a PROVISIONAL live run")
+        return 3
+    dev = next((i for i, d in enumerate(sd.query_devices()) if args.device.lower() in d["name"].lower() and d["max_output_channels"] >= 16), None)
+    if dev is None:
+        print(f"no 16-channel output device matching '{args.device}' (run: routing-check)")
+        return 1
+    token = Path(args.token_path).expanduser().read_text(encoding="utf-8").strip()
+    out_dir = Path(args.out) if args.out else DEFAULT_RUNS_ROOT / ("live-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for sid in ids:
+        tl = timelines[sid]
+        print(f"== {sid}: live {tl.total_s:.0f}s ({args.profile}) -> {sd.query_devices(dev)['name']}", flush=True)
+        from engine.core.protocol import ServicePlan
+
+        plan = ServicePlan.model_validate_json(CLOSEDLOOP_PLAN.read_text(encoding="utf-8"))
+        sock = None if args.no_human_moves else Path(args.bridge_socket).expanduser()
+        rec = asyncio.run(capture(tl, dev, token, url=args.url, arm=not args.no_arm, bridge_socket=sock, plan=plan))
+        (out_dir / sid).mkdir(exist_ok=True)
+        rec.save(out_dir / sid / "live_recording.json.gz")
+        (out_dir / sid / "trims_db.json").write_text(json.dumps(tl.trims_db, indent=2), encoding="utf-8")
+        print(f"   recorded {len(rec.frames)} frames, underruns {rec.meta.get('underruns')}", flush=True)
+    meta = {"profile": args.profile, "services": ids, "synthetic": synthetic, "bleed_db": args.bleed_db,
+            "mode": "LIVE Mode B: MainStage in the loop (engine taps from BlackHole 64ch)",
+            "human_moves": "none" if args.no_human_moves else "sent as UI fader moves through the bridge"}
+    (out_dir / "live_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    rc = _score_live(out_dir, ids, timelines, meta)
+    return 0 if args.no_fail else rc
+
+
+def cmd_prefader_check(args: argparse.Namespace) -> int:
+    import sounddevice as sd  # type: ignore[import-untyped]
+    from evals.live import prefader_check
+
+    devs = sd.query_devices()
+    out_dev = next((i for i, d in enumerate(devs) if args.out_device.lower() in d["name"].lower() and d["max_output_channels"] >= 16), None)
+    in_dev = next((i for i, d in enumerate(devs) if args.in_device.lower() in d["name"].lower() and d["max_input_channels"] >= 16), None)
+    if out_dev is None or in_dev is None:
+        print(f"devices not found: out={args.out_device} in={args.in_device} (run: routing-check)")
+        return 1
+    token = Path(args.token_path).expanduser().read_text(encoding="utf-8").strip()
+    res = asyncio.run(prefader_check(out_dev, in_dev, token, Path(args.bridge_socket).expanduser(), args.channel,
+                                     in_col=args.in_col, tap=args.tap - 1, master=(args.master - 1, args.master)))
+    curves = {k: res.pop(k) for k in ("pre_curve_db", "master_curve_db")}
+    out = Path(args.out) if args.out else DEFAULT_RUNS_ROOT / ("prefader-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({**res, **curves}, indent=2), encoding="utf-8")
+    print(json.dumps(res, indent=2))
+    rng_db = res["prefader_tap_db_range"]
+    ok = rng_db is not None and rng_db <= 0.1 and (res["master_tap_db_range"] or 0) >= 20.0
+    print(f"mainstage_prefader_invariance_db = {rng_db} dB (gate <= 0.1; master tap must follow: {res['master_tap_db_range']} dB) -> {'PASS' if ok else 'FAIL'}")
+    print(f"saved {out}")
+    return 0 if ok else 1
+
+
+def cmd_live_score(args: argparse.Namespace) -> int:
+    out_dir = Path(args.run)
+    meta = json.loads((out_dir / "live_meta.json").read_text(encoding="utf-8"))
+    args.profile, args.bleed_db = meta["profile"], meta.get("bleed_db")
+    timelines = {sid: _build(args, sid) for sid in meta["services"]}
+    return _score_live(out_dir, meta["services"], timelines, meta)
+
+
 def cmd_routing_check(args: argparse.Namespace) -> int:
     import sounddevice as sd  # type: ignore[import-untyped]
 
@@ -298,6 +401,29 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("service")
     common(p)
     p.add_argument("--device", default="BlackHole 16ch")
+    p = add("live", cmd_live, help="Mode B: play through MainStage, record the running engine, score")
+    p.add_argument("service", nargs="*", help="svc1..svc5 or all")
+    common(p)
+    p.add_argument("--device", default="BlackHole 16ch")
+    p.add_argument("--url", default="ws://127.0.0.1:8765/ws")
+    p.add_argument("--token-path", default="~/.aethermix/session.token")
+    p.add_argument("--no-arm", action="store_true", help="do not arm channels / switch the engine to ACTIVE")
+    p.add_argument("--bridge-socket", default="~/.aethermix/bridge.sock")
+    p.add_argument("--no-human-moves", action="store_true", help="do not send the scripted human fader moves")
+    p.add_argument("--out")
+    p.add_argument("--no-fail", action="store_true")
+    p = add("prefader-check", cmd_prefader_check, help="gate mainstage_prefader_invariance_db: sweep a fader, watch the taps")
+    p.add_argument("--channel", default="ch1_pastor")
+    p.add_argument("--in-col", type=int, default=0, help="BlackHole 16ch column (0-based) feeding that strip")
+    p.add_argument("--tap", type=int, default=1, help="BlackHole 64ch pre-fader tap channel (1-based)")
+    p.add_argument("--master", type=int, default=15, help="first BlackHole 64ch master-tap channel (1-based)")
+    p.add_argument("--out-device", default="BlackHole 16ch")
+    p.add_argument("--in-device", default="BlackHole 64ch")
+    p.add_argument("--token-path", default="~/.aethermix/session.token")
+    p.add_argument("--bridge-socket", default="~/.aethermix/bridge.sock")
+    p.add_argument("--out")
+    p = add("live-score", cmd_live_score, help="re-score a live run directory")
+    p.add_argument("run")
     p = add("routing-check", cmd_routing_check, help="verify loopback devices")
     p.add_argument("--aggregate", default="AetherMix-Live")
     add("closedloop-plan", cmd_closedloop_plan, help="write service_plan.closedloop.json")

@@ -42,6 +42,26 @@ engine -> bridge daemon -> "AetherMix To MainStage" (CC 20-26, 30-31) -> MainSta
 - **Resilience** (gate `resilience_checks`): `kill -9` the engine, then the bridge (`launchd` should restart it in under 2 s); unplug and replug the controller. Manual faders must stay live and no fader may go to zero. `scripts/verify_audio_midi.py` and `scripts/phase0_spike.py` automate parts of this.
 - **Physical inputs**: add the interface's mic/line inputs to the aggregate, then play keys or guitar and have someone speak into the pulpit mic to get real bleed, real feedback and real latency.
 
+## Scored live runs
+
+With the engine running on the closed-loop plan and MainStage wired as above:
+
+```bash
+engine/.venv/bin/python scripts/run_eval.py prefader-check            # gate mainstage_prefader_invariance_db
+engine/.venv/bin/python scripts/run_eval.py live svc1 svc2 svc3 --profile quick --allow-synthetic --no-fail
+engine/.venv/bin/python scripts/run_eval.py live-score recordings/eval_runs/live-<stamp>   # re-score saved recordings
+```
+
+`live` arms every channel, switches the engine to ACTIVE, plays the service to BlackHole 16ch and records the engine's
+WebSocket broadcasts (`meter_frame` every tick, `state_snapshot` on change, `heartbeat`, `brain_event`); it restores the
+previous mode and arming afterwards. Scripted human moves are sent as UI fader moves through the bridge (`ui_manual_cc`).
+`evals/live.py` rebuilds a TickLog from the recording: faders are `vol_actual_cc` (what the bridge confirmed to
+MainStage), master LUFS is the engine's momentary reading of the post-fader master tap, and the audio-path delay is
+found by cross-correlating the expected pastor level with the recorded ch1 tap level. The same `score_run` gates apply;
+the slew gate runs on a de-quantised fader because one 7-bit CC step is up to about 3 dB low on the taper.
+`prefader-check` plays a 1 kHz sine into one strip, sweeps its fader CC 1..127 through the bridge, and requires the
+pre-fader tap to move by no more than 0.1 dB while the master tap follows (at least 20 dB); it restores the fader.
+
 ## Not implemented
 
-Scoring a Mode B capture automatically. The headless scorer (`evals/scoring.py`) works from per-tick engine state; a live scorer needs the bridge CC log with timestamps and `telemetry.db` events parsed against the markers CSV.
+Clarity is still fader-implied (pre-fader stems times recorded fader gains), not measured from the master tap.

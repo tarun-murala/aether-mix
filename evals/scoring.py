@@ -213,14 +213,16 @@ def score_run(log: TickLog, tl: Timeline, gates: GatesFile, rules: MixingRules, 
 
     # --- transition slew ------------------------------------------------------
     slews: list[float] = []
+    vol = log.vol_db_slew or log.vol_db
     for s in tl.segments:
         if s.phase != "TRANSITION":
             continue
         a, b = _clip(log, s.t0 + 0.5, s.t1)
         for c in CHANNELS[1:]:
             if b - a > 2:
-                slews.append(float(np.max(np.abs(np.diff(log.vol_db[c][a:b]))) / DT))
-    add("transition_max_slew_db_s", max(slews) if slews else None, "worst |d fader/dt| across TRANSITION segments")
+                slews.append(float(np.max(np.abs(np.diff(vol[c][a:b]))) / DT))
+    add("transition_max_slew_db_s", max(slews) if slews else None,
+        "worst |d fader/dt| across TRANSITION segments" + (" (CC steps de-quantised)" if log.vol_db_slew else ""))
 
     # --- loudness -------------------------------------------------------------
     errs: list[dict[str, Any]] = []

@@ -52,6 +52,7 @@ class TickLog:
     events: list[dict[str, Any]] = field(default_factory=list)
     masters: tuple[np.ndarray, np.ndarray] | None = None  # (aethermix, static) stereo float32
     vad_backend: str = "unknown"  # "silero" | "dsp"
+    vol_db_slew: dict[str, np.ndarray] | None = None  # live only: CC steps de-quantised for the slew gate
 
     def save_npz(self, path: Path) -> None:
         arrays: dict[str, Any] = {"t": self.t, "phase": self.phase, "speech_open": self.speech_open,

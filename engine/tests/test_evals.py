@@ -330,3 +330,55 @@ def test_docs_cover_every_source_and_gate() -> None:
     for name in GATES.gates:
         assert f"`{name}`" in spec, f"EVAL_SPEC.md is missing gate {name}"
     assert "BlackHole 64ch" in runbook and "closedloop-plan" in runbook
+
+
+# ---------------------------------------------------------------------------
+# Mode B live capture: rebuild a TickLog from recorded engine broadcasts
+# ---------------------------------------------------------------------------
+
+
+async def test_live_recording_aligns_and_scores_like_the_engine_state(tmp_path: Path) -> None:
+    from engine.core.protocol import ServicePlan, db_to_cc
+    from evals.live import LiveRecording, estimate_offset_s, expected_pastor_db, ticklog_from_recording
+
+    tl = build_timeline(SERVICES, SOURCES, "svc1", "smoke", stems_root=tmp_path / "none")
+    ref = await run_timeline(tl)
+    plan = ServicePlan.model_validate_json((REPO_ROOT / "engine" / "schemas" / "service_plan.closedloop.json").read_text())
+    ids = list(plan.channel_ids)
+    t0, lag = 1_700_000_000.0, 0.26  # MainStage path delay the scorer must find
+    exp_db = expected_pastor_db(tl)
+    frames = []
+    for k in range(tl.n_ticks):
+        ts = t0 + lag + k * DT + 0.002
+        ccs = [db_to_cc(float(ref.vol_db[c][k]), plan.channel_by_id(c).cc_taper) if c in CHANNELS else 0 for c in ids]
+        rms = [float(exp_db[k]) if c == "ch1_pastor" else -60.0 for c in ids]
+        frames.append({"rx": ts, "type": "meter_frame", "ts_ms": int(ts * 1000),
+                       "payload": {"rms_db": rms, "vol_actual_cc": ccs, "master_lufs": float(ref.lufs_short[k])}})
+        chans = {c: {"speech_open": bool(ref.speech_open[k]) if c == "ch1_pastor" else False,
+                     "instrument_open": bool(ref.instrument_open[c][k]) if c in CHANNELS else False,
+                     "feedback_ceiling_db": None} for c in ids}
+        frames.append({"rx": ts, "type": "state_snapshot", "ts_ms": int(ts * 1000),
+                       "payload": {"active_phase": PHASES[ref.phase[k]], "channels": chans}})
+    frames.append({"rx": t0 + 1, "type": "heartbeat", "ts_ms": int((t0 + 1) * 1000), "payload": {"loop_p95_ms": 2.0, "loop_p99_ms": 3.0}})
+    frames.sort(key=lambda f: f["rx"])
+    rec = LiveRecording("svc1", "smoke", t0, ids, frames, {})
+    rec.save(tmp_path / "rec.json.gz")
+    rec = LiveRecording.load(tmp_path / "rec.json.gz")
+    off, r = estimate_offset_s(rec, tl, exp_db)
+    assert abs(off - lag) <= 2 * DT and r > 0.9
+    log = ticklog_from_recording(rec, tl, plan, off)
+    assert float(np.mean(log.speech_open == ref.speech_open)) > 0.99
+    assert float(np.mean(log.phase == ref.phase)) > 0.99
+    assert np.max(np.abs(log.vol_db["ch1_pastor"] - ref.vol_db["ch1_pastor"])) < 2.0  # CC quantisation only
+    rules = MixingRules.model_validate_json(RULES_PATH.read_text())
+    by = {g.gate: g for g in score_run(log, tl, GATES, rules, SERVICES.settle_s)}
+    assert by["speech_open_latency_s"].value is not None and by["loop_p99_ms"].passed is True
+
+
+def test_dequantize_keeps_ramp_slope_and_softens_isolated_steps() -> None:
+    from evals.live import dequantize_steps
+
+    ramp = np.repeat(np.arange(0.0, 4.0, 0.5), 3)  # 0.5 dB CC steps every 3 ticks = 8.33 dB/s
+    assert abs(float(np.max(np.diff(dequantize_steps(ramp)))) / DT - 0.5 / (3 * DT)) < 1e-6
+    step = np.concatenate([np.full(200, -45.0), np.full(50, -48.0)])  # one 3 dB CC step after 4 s of hold
+    assert float(np.max(np.abs(np.diff(dequantize_steps(step))))) / DT < 1.0
