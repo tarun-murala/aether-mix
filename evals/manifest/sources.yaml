@@ -1,0 +1,663 @@
+# Source ledger for the MainStage multitrack eval (docs/EVAL_SPEC.md).
+# Audio is NEVER committed: recordings/ is gitignored. `run_eval.py fetch` downloads to recordings/stems/eval/<id>/.
+# Cambridge-MT: the index lists genre and track counts only (no instruments), so every pick is by genre and must be
+# auditioned (`run_eval.py audition`). Artist anchors are matched by name at fetch time; they have not been verified
+# against the live page. Commercial use of these multitracks is unresolved: ask the site owner before shipping.
+schema_version: 1
+licenses:
+  cambridge_mt:
+    id: cambridge-mt-library
+    commercial_use: unknown
+    redistribute: false
+    attribution: Courtesy of the Cambridge-MT Mixing Secrets Free Multitrack Download Library.
+    terms_url: https://cambridge-mt.com/ms/mtk-faq
+  public_domain_us:
+    id: public-domain-us
+    commercial_use: allowed
+    redistribute: true
+    attribution: LibriVox recording (public domain in the US).
+    terms_url: https://librivox.org/pages/public-domain/
+  cc_by_4:
+    id: CC-BY-4.0
+    commercial_use: allowed
+    redistribute: true
+    attribution: LibriSpeech corpus (Panayotov et al.), CC BY 4.0.
+    terms_url: https://www.openslr.org/12
+  cc0:
+    id: CC0-1.0
+    commercial_use: allowed
+    redistribute: true
+    attribution: null
+    terms_url: https://creativecommons.org/publicdomain/zero/1.0/
+  user_provided:
+    id: user-provided
+    commercial_use: unknown
+    redistribute: false
+    attribution: null
+    terms_url: null
+  repo_generated:
+    id: repo-generated
+    commercial_use: allowed
+    redistribute: true
+    attribution: null
+    terms_url: null
+sources:
+- id: jesper_buhl_trio
+  slots:
+  - keys
+  title: Jesper Buhl Trio
+  artist: Jesper Buhl Trio
+  provider: Cambridge-MT
+  genre: Acoustic Jazz
+  tracks: 6
+  size_mb: 332
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Jesper Buhl Trio
+    tier: excerpt
+- id: h_owl_project
+  slots:
+  - keys
+  title: H-owl Project
+  artist: H-owl Project
+  provider: Cambridge-MT
+  genre: Jazz Trio
+  tracks: 10
+  size_mb: 344
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: H-owl Project
+    tier: excerpt
+- id: studio_rom_calm_razor
+  slots:
+  - keys
+  title: 'Studio ROM - PHONOMETRY I: Calm Razor Portrait'
+  artist: Studio ROM
+  provider: Cambridge-MT
+  genre: Neo-classical Ambient Electronica
+  tracks: 28
+  size_mb: 587
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Studio ROM
+    tier: excerpt
+- id: kai_roger_willumsen
+  slots:
+  - keys
+  title: Kai Roger Willumsen - Vintage Synthesizer 70s And 80s Dreams
+  artist: Kai Roger Willumsen
+  provider: Cambridge-MT
+  genre: 70s/80s Instrumental Electronica
+  tracks: 31
+  size_mb: 436
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Kai Roger Willumsen
+    tier: excerpt
+- id: david_youngs_transience
+  slots:
+  - acoustic
+  title: David Youngs - Transience
+  artist: David Youngs
+  provider: Cambridge-MT
+  genre: Intricate Solo Acoustic Guitar
+  tracks: 4
+  size_mb: 75
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: David Youngs
+    tier: full
+  notes: Album selection; several short entries (1/4/2 tracks, 28/75/96 MB).
+- id: jesse_joy
+  slots:
+  - acoustic
+  title: Jesse Joy
+  artist: Jesse Joy
+  provider: Cambridge-MT
+  genre: Fingerstyle Acoustic Folk
+  tracks: 19
+  size_mb: 131
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Jesse Joy
+    tier: excerpt
+- id: timo_carlier
+  slots:
+  - acoustic
+  title: Timo Carlier
+  artist: Timo Carlier
+  provider: Cambridge-MT
+  genre: Acoustic Singer-Songwriter
+  tracks: 9
+  size_mb: 170
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Timo Carlier
+    tier: excerpt
+- id: andrew_cole
+  slots:
+  - acoustic
+  title: Andrew Cole
+  artist: Andrew Cole
+  provider: Cambridge-MT
+  genre: Acoustic Folk-Pop
+  tracks: 33
+  size_mb: 756
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Andrew Cole
+    tier: full
+- id: santi_vega
+  slots:
+  - acoustic
+  title: Santi Vega
+  artist: Santi Vega
+  provider: Cambridge-MT
+  genre: Intricate Solo Acoustic Guitar
+  tracks: 1
+  size_mb: 53
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Santi Vega
+    tier: full
+- id: rod_alexander
+  slots:
+  - electric
+  title: Rod Alexander
+  artist: Rod Alexander
+  provider: Cambridge-MT
+  genre: Guitar Instrumental
+  tracks: 14
+  size_mb: 218
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Rod Alexander
+    tier: excerpt
+- id: neon_hornet
+  slots:
+  - electric
+  title: Neon Hornet
+  artist: Neon Hornet
+  provider: Cambridge-MT
+  genre: Grungey Blues Rock
+  tracks: 15
+  size_mb: 413
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Neon Hornet
+    tier: excerpt
+- id: bmorgan_friends
+  slots:
+  - electric
+  - vocal_song
+  title: BMorgan&FRIENDS
+  artist: BMorgan&FRIENDS
+  provider: Cambridge-MT
+  genre: Christian Rock
+  tracks: 15
+  size_mb: 681
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: BMorgan&FRIENDS
+    tier: excerpt
+  notes: Serves electric and vocal_song in service 3 (one coherent song).
+- id: blues_bastards
+  slots:
+  - electric
+  title: Blues Bastards
+  artist: Blues Bastards
+  provider: Cambridge-MT
+  genre: Blues Rock
+  tracks: 34
+  size_mb: 637
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Blues Bastards
+    tier: excerpt
+- id: hurray_for_the_riff_raff
+  slots:
+  - electric
+  title: Hurray For The Riff Raff
+  artist: Hurray For The Riff Raff
+  provider: Cambridge-MT
+  genre: Indie Rock
+  tracks: 20
+  size_mb: 612
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Hurray For The Riff Raff
+    tier: full
+- id: marcus_boeltz
+  slots:
+  - bass
+  title: Marcus Boeltz
+  artist: Marcus Boeltz
+  provider: Cambridge-MT
+  genre: Funk Rock
+  tracks: 15
+  size_mb: 264
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Marcus Boeltz
+    tier: excerpt
+- id: g_bass_project
+  slots:
+  - bass
+  title: G-Bass Project
+  artist: G-Bass Project
+  provider: Cambridge-MT
+  genre: Downtempo Neo-Soul
+  tracks: 14
+  size_mb: 352
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: G-Bass Project
+    tier: excerpt
+- id: ghost_note
+  slots:
+  - bass
+  title: Ghost Note
+  artist: Ghost Note
+  provider: Cambridge-MT
+  genre: World Funk
+  tracks: 18
+  size_mb: 688
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Ghost Note
+    tier: full
+- id: phre_the_eon
+  slots:
+  - bass
+  title: Phre The Eon
+  artist: Phre The Eon
+  provider: Cambridge-MT
+  genre: Indie Funk/Rock
+  tracks: 25
+  size_mb: 450
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Phre The Eon
+    tier: excerpt
+- id: ikebe_shakedown
+  slots:
+  - bass
+  title: Ikebe Shakedown
+  artist: Ikebe Shakedown
+  provider: Cambridge-MT
+  genre: Funk
+  tracks: 18
+  size_mb: 550
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Ikebe Shakedown
+    tier: full
+- id: ripe
+  slots:
+  - drums
+  title: Ripe
+  artist: Ripe
+  provider: Cambridge-MT
+  genre: Funk
+  tracks: 18
+  size_mb: 624
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Ripe
+    tier: full
+- id: umphreys_mcgee
+  slots:
+  - drums
+  title: Umphrey's McGee
+  artist: Umphrey's McGee
+  provider: Cambridge-MT
+  genre: Jam Rock
+  tracks: 25
+  size_mb: 833
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Umphrey's McGee
+    tier: full
+- id: funky_dawgs
+  slots:
+  - drums
+  title: Funky Dawgs Brass Band
+  artist: Funky Dawgs Brass Band
+  provider: Cambridge-MT
+  genre: New Orleans Funk/R&B
+  tracks: 25
+  size_mb: 776
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Funky Dawgs Brass Band
+    tier: full
+- id: big_mean_sound_machine
+  slots:
+  - drums
+  title: Big Mean Sound Machine
+  artist: Big Mean Sound Machine
+  provider: Cambridge-MT
+  genre: Afrobeat
+  tracks: 21
+  size_mb: 1200
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Big Mean Sound Machine
+    tier: full
+- id: alan_evans_trio
+  slots:
+  - drums
+  title: Alan Evans Trio
+  artist: Alan Evans Trio
+  provider: Cambridge-MT
+  genre: Live Funk Rock
+  tracks: 16
+  size_mb: 1700
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Alan Evans Trio
+    tier: full
+  notes: Large (1.7 GB); live recording, more room bleed.
+- id: kat_wright
+  slots:
+  - vocal_song
+  title: Kat Wright
+  artist: Kat Wright
+  provider: Cambridge-MT
+  genre: Soul Singer-Songwriter
+  tracks: 24
+  size_mb: 713
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Kat Wright
+    tier: full
+- id: remember_jones
+  slots:
+  - vocal_song
+  title: Remember Jones
+  artist: Remember Jones
+  provider: Cambridge-MT
+  genre: Soul/Pop
+  tracks: 23
+  size_mb: 683
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Remember Jones
+    tier: full
+- id: jay_menon
+  slots:
+  - vocal_song
+  title: Jay Menon
+  artist: Jay Menon
+  provider: Cambridge-MT
+  genre: Intimate Pop Ballad
+  tracks: 23
+  size_mb: 357
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Jay Menon
+    tier: excerpt
+- id: nicki_bluhm
+  slots:
+  - vocal_song
+  title: Nicki Bluhm & The Gramblers
+  artist: Nicki Bluhm & The Gramblers
+  provider: Cambridge-MT
+  genre: Live Country Soul
+  tracks: 19
+  size_mb: 502
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Nicki Bluhm & The Gramblers
+    tier: full
+  notes: 'Live recording: real stage bleed on vocal mics.'
+- id: don_camillo_choir
+  slots:
+  - choir
+  title: Don Camillo Choir - Kasimir's Adventure
+  artist: Don Camillo Choir
+  provider: Cambridge-MT
+  genre: German Unaccompanied Choir
+  tracks: 20
+  size_mb: 331
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Don Camillo Choir
+    tier: excerpt
+- id: ojebokoren
+  slots:
+  - choir
+  title: Öjebokören
+  artist: Öjebokören
+  provider: Cambridge-MT
+  genre: Choral musical
+  tracks: 7
+  size_mb: 157
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Öjebokören
+    tier: excerpt
+- id: sunshine_garcia_band
+  slots:
+  - choir
+  title: The Sunshine Garcia Band
+  artist: The Sunshine Garcia Band
+  provider: Cambridge-MT
+  genre: Reggae/Gospel
+  tracks: 56
+  size_mb: 1300
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: The Sunshine Garcia Band
+    tier: full
+  notes: Large; use the vocal tracks only (picks).
+- id: mirroman
+  slots:
+  - choir
+  title: Mirroman
+  artist: Mirroman
+  provider: Cambridge-MT
+  genre: A Capella Duo
+  tracks: 3
+  size_mb: 62
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: Mirroman
+    tier: full
+- id: thelvnguage
+  slots:
+  - choir
+  title: thelvnguage
+  artist: thelvnguage
+  provider: Cambridge-MT
+  genre: Indie Soul
+  tracks: 15
+  size_mb: 269
+  page_url: https://www.cambridge-mt.com/ms/mtk/
+  license: cambridge_mt
+  fetch:
+    method: cambridge_mt
+    anchor: thelvnguage
+    tier: excerpt
+  notes: Use the stacked vocal tracks as the choir stand-in.
+- id: spurgeon_1858
+  slots:
+  - sermon
+  title: Spurgeon's Sermons, May 1858 (LibriVox)
+  provider: LibriVox
+  genre: male reader
+  page_url: https://librivox.app/book/1131
+  license: public_domain_us
+  fetch:
+    method: librivox_page
+    target_minutes: 12
+  notes: Read speech, calm and dry; no congregation. Resolver finds the archive.org item from the page.
+- id: wesley_sermons
+  slots:
+  - sermon
+  title: Wesley, Sermons on Several Occasions, First Series (LibriVox)
+  provider: LibriVox
+  genre: reader(s)
+  page_url: https://archive.org/details/sermonsfirstseries_1307_librivox
+  license: public_domain_us
+  fetch:
+    method: archive_org
+    archive_id: sermonsfirstseries_1307_librivox
+    target_minutes: 12
+- id: librispeech_female
+  slots:
+  - sermon
+  title: LibriSpeech dev-clean female readers, stitched
+  provider: OpenSLR
+  page_url: https://www.openslr.org/12
+  license: cc_by_4
+  fetch:
+    method: openslr_librispeech
+    gender: female
+    target_minutes: 10
+  notes: Downloads dev-clean (~337 MB); stitches 3 female speakers to ~10 min.
+- id: church_own_sermon
+  slots:
+  - sermon
+  title: Your church's own recorded sermon
+  provider: user
+  license: user_provided
+  fetch:
+    method: local
+    hint: Record a real sermon (with the pastor's permission) as 48 kHz mono WAV and place it under recordings/stems/eval/church_own_sermon/.
+      This is the only realistic preaching source.
+  notes: 'Highest-value source: energetic delivery, pauses, whisper-level prayer, plosives.'
+- id: volunteer_live
+  slots:
+  - sermon
+  title: Volunteer speaking into a real mic (announcements, quiet prayer, mic handling)
+  provider: user
+  license: user_provided
+  fetch:
+    method: local
+    hint: 'Record 8+ minutes through the real pulpit mic chain: announcements, a whispered prayer, handling noise, plosives.
+      Place WAV/FLAC under recordings/stems/eval/volunteer_live/.'
+- id: soundpack_applause
+  slots:
+  - room
+  title: Packaged applause bed (repo soundpack)
+  provider: repo
+  license: repo_generated
+  fetch:
+    method: repo_asset
+    asset: assets/soundpack/common/room_applause.ogg
+  notes: Always available offline.
+- id: freesound_church_applause
+  slots:
+  - room
+  title: 'Freesound: church applause (CC0 only)'
+  provider: Freesound
+  page_url: https://freesound.org/search/?q=church+applause
+  license: cc0
+  fetch:
+    method: local
+    hint: Search https://freesound.org/search/?q=church+applause and filter License = Creative Commons 0. Download one clip
+      (>=15 s) into recordings/stems/eval/freesound_church_applause/. Do not use CC BY / CC BY-NC clips under this id.
+- id: freesound_congregation_room_tone
+  slots:
+  - room
+  title: 'Freesound: congregation room tone (CC0 only)'
+  provider: Freesound
+  page_url: https://freesound.org/search/?q=congregation+room+tone
+  license: cc0
+  fetch:
+    method: local
+    hint: Search https://freesound.org/search/?q=congregation+room+tone, filter License = CC0, place under recordings/stems/eval/freesound_congregation_room_tone/.
+- id: own_sanctuary_room_tone
+  slots:
+  - room
+  title: Room tone and claps recorded in your own sanctuary
+  provider: user
+  license: user_provided
+  fetch:
+    method: local
+    hint: Record 60 s of sanctuary room tone plus a few claps with the room mics; place under recordings/stems/eval/own_sanctuary_room_tone/.
+- id: freesound_applause_cheer
+  slots:
+  - room
+  title: 'Freesound: applause with cheering (CC0 only)'
+  provider: Freesound
+  page_url: https://freesound.org/search/?q=applause+cheering
+  license: cc0
+  fetch:
+    method: local
+    hint: Search https://freesound.org/search/?q=applause+cheering, filter License = CC0, place under recordings/stems/eval/freesound_applause_cheer/.
+- id: mainstage_b3_live
+  slots:
+  - keys
+  title: MainStage Vintage B3 + pad, played live
+  provider: user
+  license: user_provided
+  fetch:
+    method: local
+    hint: Play the B3/pad patch in MainStage and record its output (or the pre-fader tap) to 48 kHz stereo WAV under recordings/stems/eval/mainstage_b3_live/.
+      Covers the software-instrument-inside-MainStage case.

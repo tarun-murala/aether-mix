@@ -1,0 +1,153 @@
+# Five scripted test services (Latin square: service N uses the Nth source of every slot).
+# One shared 25-minute script; layer positions are fractions of the segment so the shorter profiles keep trap order.
+# Profiles: full (~26 min), quick (~6 min, default for CI/local), smoke (~36 s, unit tests).
+# `phase` is the ground-truth macro phase (null = unscored). `expect` keys are interpreted by evals/scoring.py:
+#   speech_onset            pastor must reach speech-open level in < 1.0 s (skipped when already open)
+#   instrument_open: [ch..] any listed channel opens within 0.8 s of the layer start and rises >= 10 dB
+#   no_instrument_open: [ch..]   none of the listed channels may fire instrument_open during the layer
+#   probe_instrument_open: [ch..]  record whether the reflex fires (finding, not a gate)
+#   speech_over_intro_cap   instruments stay <= WORSHIP_LOW baseline - 6 dB while speech-open is active
+#   ducking: [ch..]         listed instrument channels drop >= 4 dB within 2 s of the layer start
+#   feedback_cut: ch..      anti-feedback cut on that channel; 0 cuts elsewhere / outside the howl window
+#   no_speech_open: true    ch1_pastor speech_open must never fire in the segment
+schema_version: 1
+sample_rate: 48000
+bleed_db: -22.0        # stage bleed into vocal/spoken mics (plan suggests -15 for a stress run: --bleed-db -15)
+trim_range_db: 6.0     # seeded +/- trim per tap group, tests gain normalisation
+settle_s: 4.5          # hysteresis settle window excluded from phase scoring
+segments:
+  - id: warmup
+    title: Band warm-up (unscored)
+    phase: null
+    step_idx: 0
+    dur: {full: 135, quick: 24}
+    layers:
+      - {id: warm_drums, src: drums, part: drums, at_frac: 0.0, dur_frac: 0.33, expect: {probe_instrument_open: [ch9_drums]}}
+      - {id: warm_bass, src: bass, part: bass, at_frac: 0.33, dur_frac: 0.33, expect: {probe_instrument_open: [ch9_drums]}}
+      - {id: warm_keys, src: keys, part: keys, at_frac: 0.66, dur_frac: 0.34, expect: {no_instrument_open: [ch5_keys]}}
+  - id: welcome
+    title: Welcome (spoken word)
+    phase: SPOKEN_WORD
+    step_idx: 3
+    dur: {full: 90, quick: 20, smoke: 10}
+    layers:
+      - {id: welcome_speech, src: sermon, part: speech, continue: true, expect: {speech_onset: true}}
+  - id: welcome_applause
+    title: Applause
+    phase: TRANSITION
+    step_idx: 4
+    dur: {full: 15, quick: 15, smoke: 8}
+    layers:
+      - {id: applause_1, src: room, part: room}
+  - id: song1
+    title: Song 1 (full band, pastor over the intro)
+    phase: WORSHIP_HIGH
+    step_idx: 0
+    dur: {full: 240, quick: 40, smoke: 12}
+    layers:
+      - {id: song1_band, src: vocal_song, part: song, expect: {instrument_open: [ch9_drums, ch5_keys, ch7_guitars]}}
+      - {id: song1_intro_speech, src: sermon, part: speech, dur_s: 6.0, gain_db: -3.0, continue: true, expect: {speech_over_intro_cap: true}}
+  - id: interrupt
+    title: Pastor interrupt over the song
+    phase: null
+    step_idx: 0
+    dur: {full: 15, quick: 15, smoke: 8}
+    layers:
+      - {id: interrupt_song, src: vocal_song, part: song, continue: true}
+      - {id: interrupt_speech, src: sermon, part: speech, gain_db: 3.0, continue: true, expect: {speech_onset: true, ducking: [ch9_drums, ch7_guitars, ch5_keys]}}
+  - id: applause_2
+    title: Applause
+    phase: TRANSITION
+    step_idx: 4
+    dur: {full: 15, quick: 15}
+    layers:
+      - {id: applause_2, src: room, part: room}
+  - id: offertory
+    title: Offertory (solo keys, then solo acoustic guitar)
+    phase: WORSHIP_LOW
+    step_idx: 1
+    dur: {full: 120, quick: 24}
+    layers:
+      - {id: offertory_keys, src: keys, part: keys, at_frac: 0.0, dur_frac: 0.5, expect: {probe_instrument_open: [ch5_keys]}}
+      - {id: offertory_acoustic, src: acoustic, part: guitar, at_frac: 0.5, dur_frac: 0.5, expect: {probe_instrument_open: [ch7_guitars]}}
+  - id: special_music
+    title: Special music (choir)
+    phase: WORSHIP_LOW
+    step_idx: 1
+    dur: {full: 90, quick: 20}
+    expect: {no_speech_open: true}
+    layers:
+      - {id: choir, src: choir, part: choir}
+  - id: prayer
+    title: Pastoral prayer over a keys pad
+    phase: PRAYER_UNDERSCORE
+    step_idx: 2
+    dur: {full: 120, quick: 24}
+    layers:
+      - {id: prayer_speech, src: sermon, part: speech, src_offset_s: 600.0, gain_db: -2.0}
+      - {id: prayer_pad, src: keys, part: keys, gain_db: -8.0, expect: {no_instrument_open: [ch5_keys]}}
+      - {id: prayer_electric_swell, src: electric, part: guitar, at_frac: 0.5, dur_s: 8.0, gain_db: -6.0, expect: {no_instrument_open: [ch7_guitars]}}
+  - id: sermon
+    title: Sermon (spoken word with traps)
+    phase: SPOKEN_WORD
+    step_idx: 3
+    dur: {full: 480, quick: 90}
+    layers:
+      - {id: sermon_speech, src: sermon, part: speech, continue: true}
+      - {id: sermon_strum, src: acoustic, part: guitar, at_frac: 0.1875, dur_s: 4.0, gain_db: -3.0, expect: {no_instrument_open: [ch7_guitars]}}
+      - {id: sermon_bass_noodle, src: bass, part: bass, at_frac: 0.375, dur_s: 3.0, expect: {probe_instrument_open: [ch9_drums]}}
+      - {id: sermon_cymbal_check, src: drums, part: drums, at_frac: 0.5, dur_s: 3.0, expect: {probe_instrument_open: [ch9_drums]}}
+      - {id: sermon_howl, part: howl, col: 1, at_frac: 0.625, dur_s: 4.0, freq_hz: 2500.0, start_amp: 0.04, growth_db_per_s: 3.0, expect: {feedback_cut: ch2_lead_vox}}
+      - {id: sermon_amen, src: room, part: room, at_frac: 0.9375, dur_s: 5.0, gain_db: -6.0}
+    actions:
+      - {kind: human_move, channel: ch1_pastor, at_frac: 0.75, delta_db: 3.0, hold_s: 15.0}
+  - id: response_song
+    title: Response song (cold full-band start)
+    phase: WORSHIP_HIGH
+    step_idx: 0
+    dur: {full: 120, quick: 30}
+    layers:
+      - {id: response_band, src: vocal_song, part: song, at_s: 4.0, src_offset_s: 40.0, expect: {instrument_open: [ch9_drums, ch5_keys, ch7_guitars]}}
+  - id: benediction
+    title: Benediction over the fading outro
+    phase: SPOKEN_WORD
+    step_idx: 3
+    dur: {full: 40, quick: 20}
+    layers:
+      - {id: benediction_speech, src: sermon, part: speech, continue: true, expect: {speech_onset: true}}
+      - {id: benediction_outro, src: vocal_song, part: song, src_offset_s: 100.0, gain_db: -6.0, fade_out_s: 15.0}
+  - id: closing_applause
+    title: Closing applause
+    phase: TRANSITION
+    step_idx: 4
+    dur: {full: 15, quick: 15}
+    layers:
+      - {id: applause_3, src: room, part: room}
+  - id: silence
+    title: Silence (nothing may fire)
+    phase: null
+    step_idx: 4
+    dur: {full: 60, quick: 15}
+    expect: {no_speech_open: true, no_instrument_open: [ch5_keys, ch7_guitars, ch9_drums]}
+    layers: []
+services:
+  - id: svc1
+    title: Service 1
+    seed: 101
+    slots: {keys: jesper_buhl_trio, acoustic: david_youngs_transience, electric: rod_alexander, bass: marcus_boeltz, drums: ripe, vocal_song: kat_wright, choir: don_camillo_choir, sermon: spurgeon_1858, room: soundpack_applause}
+  - id: svc2
+    title: Service 2
+    seed: 202
+    slots: {keys: h_owl_project, acoustic: jesse_joy, electric: neon_hornet, bass: g_bass_project, drums: umphreys_mcgee, vocal_song: remember_jones, choir: ojebokoren, sermon: wesley_sermons, room: freesound_church_applause}
+  - id: svc3
+    title: Service 3
+    seed: 303
+    slots: {keys: studio_rom_calm_razor, acoustic: timo_carlier, electric: bmorgan_friends, bass: ghost_note, drums: funky_dawgs, vocal_song: bmorgan_friends, choir: sunshine_garcia_band, sermon: librispeech_female, room: freesound_congregation_room_tone}
+  - id: svc4
+    title: Service 4
+    seed: 404
+    slots: {keys: kai_roger_willumsen, acoustic: andrew_cole, electric: blues_bastards, bass: phre_the_eon, drums: big_mean_sound_machine, vocal_song: jay_menon, choir: mirroman, sermon: church_own_sermon, room: own_sanctuary_room_tone}
+  - id: svc5
+    title: Service 5
+    seed: 505
+    slots: {keys: mainstage_b3_live, acoustic: santi_vega, electric: hurray_for_the_riff_raff, bass: ikebe_shakedown, drums: alan_evans_trio, vocal_song: nicki_bluhm, choir: thelvnguage, sermon: volunteer_live, room: freesound_applause_cheer}

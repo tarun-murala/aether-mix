@@ -1,0 +1,116 @@
+# Pass/fail limits. Values mirror SPEC.md section 9 (Phase 2 quantitative gates) unless marked otherwise.
+# mode: headless = scored by `run_eval.py run`; mainstage = needs the closed-loop MainStage rig; manual = human check.
+schema_version: 1
+gates:
+  phase_macro_f1:
+    metric: Macro F1 of active_phase vs ground truth after the settle window
+    description: Phase classifier accuracy on scripted services
+    min: 0.85
+    source: "SPEC section 9 Phase 2 (offline classifier >= 85% macro F1)"
+  speech_open_latency_s:
+    metric: Seconds from pastor onset to speech_open and pastor fader within 1 dB of its open level
+    description: Speech-open reflex latency, worst onset
+    max: 1.0
+    source: "SPEC section 9 Phase 2 (speech-open < 1.0 s)"
+  speech_open_misses:
+    metric: Pastor onsets (from a closed fader) that never opened
+    description: Missed pastor onsets
+    equals: 0
+    source: "SPEC section 9 Phase 2 (0 missed pastor speech onsets)"
+  instrument_open_latency_s:
+    metric: Seconds from song start (silent band) to instrument_open on a band channel
+    description: Instrument-open reflex latency, worst onset
+    max: 0.8
+    source: "SPEC section 9 Phase 2 (instrument-open < 800 ms)"
+  false_instrument_opens:
+    metric: instrument_open events inside no_instrument_open windows (prayer, tuning, keys alone, silence)
+    description: False instrument opens
+    equals: 0
+    source: "SPEC section 9 Phase 2 (0 false triggers in prayer or on solo guitar tuning)"
+  speech_over_intro_excess_db:
+    metric: Max dB an instrument channel exceeds WORSHIP_LOW baseline - 6 dB while speech_open is active
+    description: Duck cap during speech over a song intro
+    max: 1.0
+    source: "SPEC section 5.3 Tier 1 item 4 (capped at worship_target + duck_depth_db)"
+  duck_drop_db:
+    metric: Smallest drop (dB, within 2 s) among listed instrument channels when the pastor interrupts
+    description: Auto-ducking depth
+    min: 4.0
+    source: "SPEC section 5.3 Tier 1 item 5 (-6 dB duck depth); 4 dB tolerance matches scripts/simulate_service.py"
+  feedback_cut_latency_s:
+    metric: Seconds from howl start to a feedback ceiling being set on the howling channel
+    description: Anti-feedback reaction time
+    max: 0.4
+    source: "SPEC section 9 Phase 2 (cuts stationary howl < 400 ms)"
+  false_feedback_cuts:
+    metric: Feedback ceilings set on any channel outside the howl window (+ 8 s release tail)
+    description: False anti-feedback cuts (pads, organ, sustained BV notes, choir)
+    equals: 0
+    source: "SPEC section 9 Phase 2 (0 false triggers on synth pad bleed or clean vocals)"
+  human_override_drift_db:
+    metric: Max |pastor fader - human-set level| during the hold window after a human move
+    description: Human override invariance
+    max: 0.05
+    source: "SPEC section 9 Phase 2 (0.00 dB drift while human offset is active)"
+  transition_max_slew_db_s:
+    metric: Max |d(fader)/dt| over non-protect channels during TRANSITION segments
+    description: Gentle settle during applause
+    max: 8.5
+    source: "SPEC section 5.3 slew table (duck release 8 dB/s is the fastest upward path; musical 4 dB/s)"
+  lufs_error_lu:
+    metric: Median short-term LUFS of the emulated master minus phase target, worst phase (closed-loop emulation)
+    description: Loudness tracking
+    max: 2.0
+    source: "SPEC mixing_rules.json phase_target_lufs; tolerance chosen for this suite"
+    informational: true  # headless master is an uncalibrated emulation; only meaningful in MainStage mode
+  clarity_gain_db:
+    metric: Pastor-to-band voice-band SNR on the emulated master minus the same on a unity sum
+    description: Intelligibility gain
+    min: 5.0
+    source: "scripts/validate_real_stems.py clarity gate (>= +5 dB)"
+  no_speech_open_violations:
+    metric: Ticks where ch1_pastor speech_open fired in choir/silence segments
+    description: No false speech-open on singing or silence
+    equals: 0
+    source: "docs/EVAL_SPEC.md (choir must not read as speech)"
+  loop_p99_ms:
+    metric: 50 Hz engine tick latency p99 (headless, this machine)
+    description: Tier-1 loop latency
+    max: 25.0
+    source: "SPEC section 9 Phase 2 (p99 <= 25 ms)"
+  ch9_single_onset_opens:
+    metric: Probe windows where bass or cymbals alone fired instrument_open on ch9
+    description: Finding, not a gate (spec lets one ch9 onset open the band)
+    max: 0
+    source: "docs/EVAL_SPEC.md risk 1"
+    informational: true
+  mainstage_prefader_invariance_db:
+    metric: Change in BlackHole 64ch taps 1-12 RMS while a MainStage fader sweeps -60..+6 dB
+    description: Pre-fader taps ignore Concert fader moves
+    max: 0.1
+    source: "SPEC section 9 Phase 0"
+    mode: mainstage
+  mainstage_overloads_30min:
+    metric: MainStage CPU/CoreAudio overloads during a 30 minute looped service with the heaviest concert
+    description: Zero MainStage contention
+    equals: 0
+    source: "SPEC section 9 Phase 0 and 2"
+    mode: mainstage
+  resilience_checks:
+    metric: Scripted kill -9 of engine and bridge plus controller unplug (scripts/verify_audio_midi.py, scripts/phase0_spike.py)
+    description: Manual control survives faults, faders never zero, bridge back < 2 s
+    equals: 0
+    source: "SPEC section 7 failure matrix"
+    mode: manual
+  llm_critique_validity:
+    metric: Valid JSON and +/-3 dB auto-apply gate across 5 typed critiques per run; p95 < 2.0 s
+    description: Supervisor LLM behaviour on real critiques
+    equals: 0
+    source: "SPEC section 6.3 and Phase 0"
+    mode: manual
+  listening_score:
+    metric: Blind 1-5 score per segment, AetherMix vs fixed static mix
+    description: Subjective mix quality
+    min: 4.0
+    source: "docs/EVAL_SPEC.md (mean >= 4, no segment <= 2)"
+    mode: manual

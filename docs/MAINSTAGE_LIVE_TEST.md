@@ -60,3 +60,5 @@ Launch the native macOS UI:
 macos-app/.build/debug/AetherMix
 ```
 Switch from **SHADOW** to **ACTIVE** to watch MainStage's faders glide smoothly in real time as the tunes change between Acoustic Worship, Full-Band Pop-Rock, Gospel Groove, Pastor Speech Ducking, Sermon Solo, and Applause!
+
+See also: [EVAL_SPEC.md](EVAL_SPEC.md) for the multi-input eval matrix and [MAINSTAGE_EVAL_RUNBOOK.md](MAINSTAGE_EVAL_RUNBOOK.md) for the two-bus closed-loop rig.

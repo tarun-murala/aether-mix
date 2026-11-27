@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 UV := $(shell command -v uv || echo $$HOME/.local/bin/uv)
 PYTHON := engine/.venv/bin/python
 
-.PHONY: setup setup-ml models install-bridge uninstall-bridge install-prereqs check-setup test test-py test-swift spike verify simulate demo soundpack live-mainstage audition-soundpack build-app dmg dev clean
+.PHONY: setup setup-ml models install-bridge uninstall-bridge install-prereqs check-setup test test-py test-swift spike verify simulate demo soundpack live-mainstage audition-soundpack build-app dmg dev clean eval-list eval-status eval-fetch eval-audition eval-smoke eval-quick eval-provisional eval-full eval-routing eval-closedloop-plan eval-test
 
 setup:
 	cd engine && $(UV) sync --extra dev --extra audio
@@ -78,3 +78,39 @@ dev:
 
 clean:
 	rm -rf engine/.pytest_cache macos-app/.build
+# --- Multitrack MainStage eval suite (docs/EVAL_SPEC.md) ---
+EVAL := $(PYTHON) scripts/run_eval.py
+
+eval-list:
+	$(EVAL) list
+
+eval-status:
+	$(EVAL) status
+
+# Reads license terms first: make eval-fetch ACCEPT_TERMS=1 [SERVICE=svc1]
+eval-fetch:
+	$(EVAL) fetch $(if $(ACCEPT_TERMS),--accept-terms,) $(if $(SERVICE),--service $(SERVICE),)
+
+eval-audition:
+	$(EVAL) audition
+
+eval-smoke:
+	$(EVAL) run all --profile smoke --allow-synthetic --no-fail
+
+eval-quick:
+	$(EVAL) run all --profile quick
+
+eval-provisional:
+	$(EVAL) run all --profile quick --allow-synthetic --no-fail
+
+eval-full:
+	$(EVAL) run all --profile full --write-audio
+
+eval-routing:
+	$(EVAL) routing-check
+
+eval-closedloop-plan:
+	$(EVAL) closedloop-plan
+
+eval-test:
+	cd engine && $(UV) run --no-sync pytest -v tests/test_evals.py
