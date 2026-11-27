@@ -55,6 +55,20 @@ from engine.core.rules_manager import RulesManager
 if TYPE_CHECKING:
     from engine.core.audio_tap import AudioFrameMetrics
 
+# Anti-feedback growth tracking.
+# A musical note reaches its sustain level within a few ticks of its onset, whereas acoustic
+# feedback rings up continuously. The growth baseline is therefore the loudest level seen during
+# the first FEEDBACK_ONSET_SETTLE_S of a candidate, so a note's attack never counts as "growth".
+FEEDBACK_ONSET_SETTLE_S = 0.06
+# On a singing channel's fundamental bins, growth must also be a sustained ring-up: the magnitude
+# must rise by feedback_growth_db across the trailing feedback_hold_ms window (>= 8 dB/s with the
+# default 2 dB / 250 ms rules) without dipping more than this below the window's starting level.
+# Held notes, crescendos and expression swells wander up and down; a howl only climbs, and it
+# climbs to new highs: growth is measured from the higher of the window start and the loudest
+# level this candidate already held earlier (so recovering from an expression dip is not growth).
+FEEDBACK_RINGUP_MAX_DIP_DB = 1.0
+FEEDBACK_RINGUP_EDGE_TICKS = 3  # average this many ticks at each window edge (jitter guard)
+
 
 @dataclass
 class AgentCCWrite:
@@ -131,6 +145,8 @@ class _ChannelInternal:
     fb_hold_s: float = 0.0
     fb_initial_mag_db: float = 0.0
     fb_initial_prom_db: float = 0.0
+    fb_mag_hist: deque[tuple[float, float]] = field(default_factory=deque)  # (hold_s, mag_db)
+    fb_prior_peak_db: float = -120.0  # loudest level held before the trailing ring-up window
     fb_total_cut_db: float = 0.0
     fb_last_cut_s: float | None = None
     fb_clear_s: float = 0.0
@@ -903,24 +919,52 @@ class SafetyFirewall:
                 ch_int.fb_clear_s = 0.0
                 if ch_int.fb_candidate_bin is not None and abs(detected_bin - ch_int.fb_candidate_bin) <= 1:
                     ch_int.fb_hold_s += dt_s
+                    if ch_int.fb_hold_s <= FEEDBACK_ONSET_SETTLE_S + 1e-9:
+                        # Still inside the onset: track the attack up to its sustain level
+                        ch_int.fb_initial_mag_db = max(ch_int.fb_initial_mag_db, detected_mag)
+                        ch_int.fb_initial_prom_db = max(ch_int.fb_initial_prom_db, detected_prom)
                 else:
                     ch_int.fb_candidate_bin = detected_bin
                     ch_int.fb_hold_s = dt_s
                     ch_int.fb_initial_mag_db = detected_mag
                     ch_int.fb_initial_prom_db = detected_prom
+                    ch_int.fb_mag_hist.clear()
+                    ch_int.fb_prior_peak_db = -120.0
 
                 hold_target_s = fw.feedback_hold_ms / 1000.0
-                growth_mag = detected_mag - ch_int.fb_initial_mag_db
-                growth_prom = detected_prom - ch_int.fb_initial_prom_db
-                meets_growth = (
-                    (growth_mag >= fw.feedback_growth_db) or (growth_prom >= fw.feedback_growth_db)
-                ) and (not is_harmonic_vocal)
+                ch_int.fb_mag_hist.append((ch_int.fb_hold_s, detected_mag))
+                window_start_s = max(FEEDBACK_ONSET_SETTLE_S, ch_int.fb_hold_s - hold_target_s)
+                while ch_int.fb_mag_hist and ch_int.fb_mag_hist[0][0] < window_start_s - 1e-9:
+                    popped_hold_s, popped_mag = ch_int.fb_mag_hist.popleft()
+                    if popped_hold_s > FEEDBACK_ONSET_SETTLE_S + 1e-9:
+                        ch_int.fb_prior_peak_db = max(ch_int.fb_prior_peak_db, popped_mag)
+
                 # Steady held vocal fundamentals (<=1.12 kHz) on an actively singing channel
                 # require actual acoustic growth to trigger; pure high-frequency howls (>1.12 kHz)
                 # or open non-singing mics lock on immediately.
                 is_steady_sung_fundamental = bool((sung_vocals or {}).get(ch_id, False)) and (
                     detected_bin <= 24
                 )
+                if is_steady_sung_fundamental:
+                    # Prominence follows the band floor under a sung note, so only the mic's own
+                    # magnitude counts, and it must be ringing up across the trailing window.
+                    window_mags = np.fromiter((m for _, m in ch_int.fb_mag_hist), dtype=np.float64)
+                    edge = FEEDBACK_RINGUP_EDGE_TICKS
+                    if window_mags.size >= 2 * edge:
+                        start_db = float(np.mean(window_mags[:edge]))
+                        end_db = float(np.mean(window_mags[-edge:]))
+                        ringing_up = float(np.min(window_mags)) >= start_db - FEEDBACK_RINGUP_MAX_DIP_DB
+                        ref_db = max(start_db, ch_int.fb_prior_peak_db, ch_int.fb_initial_mag_db)
+                        meets_growth = ringing_up and (end_db - ref_db) >= fw.feedback_growth_db
+                    else:
+                        meets_growth = False
+                    meets_growth = meets_growth and (not is_harmonic_vocal)
+                else:
+                    growth_mag = detected_mag - ch_int.fb_initial_mag_db
+                    growth_prom = detected_prom - ch_int.fb_initial_prom_db
+                    meets_growth = (
+                        (growth_mag >= fw.feedback_growth_db) or (growth_prom >= fw.feedback_growth_db)
+                    ) and (not is_harmonic_vocal)
                 meets_lockon = (
                     (detected_prom > 18.0)
                     and (not is_harmonic_vocal)
@@ -967,6 +1011,8 @@ class SafetyFirewall:
             else:
                 ch_int.fb_candidate_bin = None
                 ch_int.fb_hold_s = 0.0
+                ch_int.fb_mag_hist.clear()
+                ch_int.fb_prior_peak_db = -120.0
                 if ch_int.feedback_ceiling_db is not None:
                     ch_int.fb_clear_s += dt_s
                     if ch_int.fb_clear_s >= fw.feedback_release_delay_s - 1e-9:

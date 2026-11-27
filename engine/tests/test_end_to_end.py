@@ -20,6 +20,7 @@ from engine.core.protocol import (
     ServicePlan,
 )
 from engine.core.telemetry_store import TelemetryStore
+from engine.core.vad_worker import VADWorker
 from engine.main import (
     DEFAULT_MIXING_RULES_PATH,
     DEFAULT_SERVICE_PLAN_PATH,
@@ -33,6 +34,7 @@ from engine.tests.mock_io import (
     SyntheticServiceAudioGenerator,
 )
 from fastapi.testclient import TestClient
+from scripts import simulate_service
 from scripts.simulate_service import run_headless_simulation
 from starlette.websockets import WebSocketDisconnect
 
@@ -52,6 +54,8 @@ def _make_test_engine(tmp_path: Path, *, headless: bool = True) -> tuple[AetherM
     rules_path.write_text(DEFAULT_MIXING_RULES_PATH.read_text(encoding="utf-8"), encoding="utf-8")
     bridge = MockBridgeClient(plan)
     llm = MockLLMSupervisor(plan)
+    # Synthetic speech is only meaningful to the DSP VAD; never pick up an installed Silero model.
+    vad_worker = VADWorker(plan, model_path=Path("/nonexistent/silero_vad.onnx"))
     engine = AetherMixEngine(
         plan=plan,
         rules=rules,
@@ -65,6 +69,7 @@ def _make_test_engine(tmp_path: Path, *, headless: bool = True) -> tuple[AetherM
         use_service_plan=False,
         bridge_client=bridge,
         llm_supervisor=llm,
+        vad_worker=vad_worker,
     )
     return engine, bridge, llm
 
@@ -458,8 +463,43 @@ async def test_headless_service_simulator_all_gates_pass() -> None:
     all_passed, checks, metrics = await run_headless_simulation()
     failed = [c for c in checks if not c.passed]
     assert all_passed, f"Simulator gates failed: {failed}"
+    assert metrics["vad_backend"] == "dsp"
     assert metrics["loop_p99_ms"] <= 25.0
     assert metrics["agent_writes"] > 0
+
+
+@pytest.mark.asyncio
+async def test_headless_simulator_pins_dsp_vad_even_when_silero_model_is_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: an installed ~/.aethermix/models/silero_vad.onnx must not leak into the default sim.
+
+    Silero rejects the synthetic formant voice, which used to fail 3 of the 8 speech/phase gates
+    on any machine where the setup wizard had downloaded the model.
+    """
+    import engine.core.vad_worker as vad_mod
+
+    fake_model = tmp_path / ".aethermix" / "models" / "silero_vad.onnx"
+    fake_model.parent.mkdir(parents=True)
+    fake_model.write_bytes(b"not-a-real-onnx-model")
+    monkeypatch.setattr(vad_mod, "DEFAULT_SILERO_MODEL_PATH", fake_model)
+
+    seen_model_paths: list[Path] = []
+
+    class SpyVADWorker(VADWorker):
+        def __init__(self, plan: ServicePlan, model_path: Path | None = None) -> None:
+            super().__init__(plan, model_path=model_path)
+            seen_model_paths.append(self.model_path)
+
+    monkeypatch.setattr(simulate_service, "VADWorker", SpyVADWorker)
+
+    all_passed, checks, metrics = await run_headless_simulation()
+    assert metrics["vad_backend"] == "dsp"
+    assert seen_model_paths and all(p != fake_model and not p.exists() for p in seen_model_paths)
+    assert all_passed, f"Simulator gates failed: {[c for c in checks if not c.passed]}"
+
+    with pytest.raises(ValueError):
+        await run_headless_simulation(vad="webrtc")
 
 
 # ---------------------------------------------------------------------------

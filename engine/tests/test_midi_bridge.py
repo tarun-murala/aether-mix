@@ -38,6 +38,9 @@ def _load_plan_dict(**midi_overrides: Any) -> dict[str, Any]:
 def short_tmp_dir() -> Path:
     """Short directory inside workspace to stay under macOS AF_UNIX 104-byte path limit."""
     base = REPO_ROOT / "engine" / ".pytest_cache"
+    # Deep checkouts (e.g. git worktrees under a temp dir) overflow the limit; fall back to /tmp.
+    if len(str(base / "s_xxxxxxxx" / "bridge_state.json.tmp")) > 100:
+        base = Path("/tmp")
     base.mkdir(parents=True, exist_ok=True)
     d = Path(tempfile.mkdtemp(prefix="s_", dir=str(base)))
     try:

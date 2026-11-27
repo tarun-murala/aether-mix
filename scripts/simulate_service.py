@@ -34,6 +34,7 @@ from engine.core.protocol import (
     ServicePhase,
     ServicePlan,
 )
+from engine.core.vad_worker import VADWorker
 from engine.main import (
     DEFAULT_MIXING_RULES_PATH,
     DEFAULT_SERVICE_PLAN_PATH,
@@ -46,6 +47,11 @@ from engine.tests.mock_io import (
     SyntheticServiceAudioGenerator,
 )
 
+# A path that never exists: forces VADWorker onto its deterministic DSP backend
+# even when ~/.aethermix/models/silero_vad.onnx is installed (mirrors evals/runner.py).
+_DSP_ONLY_MODEL_PATH = Path("/nonexistent/silero_vad.onnx")
+VAD_BACKENDS = ("dsp", "silero")
+
 
 @dataclass
 class GateCheck:
@@ -57,8 +63,17 @@ class GateCheck:
 async def run_headless_simulation(
     plan_path: Path = DEFAULT_SERVICE_PLAN_PATH,
     rules_path: Path = DEFAULT_MIXING_RULES_PATH,
+    vad: str = "dsp",
 ) -> tuple[bool, list[GateCheck], dict[str, Any]]:
-    """Run full synthetic service through AetherMixEngine in-process and evaluate SPEC v5.1 gates."""
+    """Run full synthetic service through AetherMixEngine in-process and evaluate SPEC v5.1 gates.
+
+    ``vad="dsp"`` (default) pins the deterministic DSP speech VAD: the synthetic pastor
+    voice is a formant/AM model that Silero (trained on real speech) correctly rejects, so
+    the speech gates are only meaningful on DSP. ``vad="silero"`` uses the installed
+    ONNX model if present (falls back to DSP if not); ``metrics["vad_backend"]`` says which ran.
+    """
+    if vad not in VAD_BACKENDS:
+        raise ValueError(f"vad must be one of {VAD_BACKENDS}, got {vad!r}")
     plan = ServicePlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
     rules = MixingRules.model_validate_json(rules_path.read_text(encoding="utf-8"))
     gen = SyntheticServiceAudioGenerator(sample_rate=plan.sample_rate, seed=2026)
@@ -67,6 +82,7 @@ async def run_headless_simulation(
         td_path = Path(td)
         bridge = MockBridgeClient(plan)
         llm = MockLLMSupervisor(plan)
+        vad_worker = VADWorker(plan, model_path=_DSP_ONLY_MODEL_PATH if vad == "dsp" else None)
         engine = AetherMixEngine(
             plan=plan,
             rules=rules,
@@ -79,8 +95,10 @@ async def run_headless_simulation(
             use_service_plan=False,
             bridge_client=bridge,
             llm_supervisor=llm,
+            vad_worker=vad_worker,
         )
         await engine.start(start_loop=False)
+        vad_backend = "silero" if engine.vad_worker.using_onnx else "dsp"
         try:
             # Arm all channels & switch to ACTIVE mode for full simulation
             for ch in plan.channels:
@@ -255,6 +273,7 @@ async def run_headless_simulation(
 
             all_passed = all(c.passed for c in checks)
             metrics = {
+                "vad_backend": vad_backend,
                 "sim_duration_s": round(sim_t, 2),
                 "loop_p95_ms": hb.loop_p95_ms,
                 "loop_p99_ms": hb.loop_p99_ms,
@@ -323,6 +342,12 @@ def main(argv: list[str] | None = None) -> int:
     mode_grp.add_argument("--headless", action="store_true", help="Run full engine pipeline in-process")
     mode_grp.add_argument("--blackhole", action="store_true", help="Stream 16ch audio out to BlackHole 16ch")
     parser.add_argument("--segment-seconds", type=float, default=12.0, help="Seconds per phase in --blackhole mode")
+    parser.add_argument(
+        "--vad",
+        choices=VAD_BACKENDS,
+        default="dsp",
+        help="Speech VAD backend for --headless (default dsp; silero rejects the synthetic voice)",
+    )
     parser.add_argument("--json", action="store_true", dest="json_output")
     args = parser.parse_args(argv)
 
@@ -331,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Default to headless simulation
     all_passed, checks, metrics = asyncio.run(
-        run_headless_simulation(args.service_plan, args.mixing_rules)
+        run_headless_simulation(args.service_plan, args.mixing_rules, vad=args.vad)
     )
     if args.json_output:
         print(
@@ -347,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("=" * 72)
         print("AetherMix v5.1 Headless Service Simulation Report")
+        print(f"VAD backend: {metrics['vad_backend']} (requested --vad {args.vad})")
         print("=" * 72)
         for c in checks:
             print(f"[{'PASS' if c.passed else 'FAIL'}] {c.name}: {c.detail}")

@@ -497,6 +497,59 @@ def test_antifeedback_rejects_synth_pad_bleed_and_clean_harmonic_vocal() -> None
         assert out.channels_state["ch2_lead_vox"].feedback_ceiling_db is None
 
 
+def _bv2_tone_metrics(plan: ServicePlan, bin_k: int, mag_db: float, floor_db: float = -70.0) -> FakeAudioMetrics:
+    """Single harmonic-poor partial on ch4_bv2 (worst case: a sine-like 'ooh', or a pure howl)."""
+    m = _silent_metrics(plan)
+    m.fft_mag_db = {ch.id: np.full(513, floor_db, dtype=np.float64) for ch in plan.channels}
+    m.fft_mag_db["ch4_bv2"][bin_k] = mag_db
+    return m
+
+
+def test_antifeedback_ignores_held_sung_note_attack_swell_and_dip() -> None:
+    """Regression (re-rendered soundpack tune 3, ch4_bv2): a held, harmonic-poor sung note must not
+    be cut. The candidate used to latch its baseline on the note's attack frame, so the jump from
+    attack to sustain looked like feedback growth (-4 -> -8 -> -12 dB false cuts)."""
+    plan, rules, _, _, fw = _make_stack()
+    _arm_all_and_activate(plan, rules, fw, ServicePhase.WORSHIP_HIGH)
+    sung = {"ch4_bv2": True}
+    # ~420 Hz note: 2-tick attack to sustain, gentle 1.5 dB/s crescendo, then a 4 dB
+    # expression dip and recovery (all values taken from the measured bv2 stem envelope)
+    envelope = [-28.0, -17.0] + [-15.5 + 0.03 * i for i in range(40)]
+    envelope += [-15.0, -16.5, -18.5, -20.4, -20.0, -19.0, -17.5, -16.5, -16.0, -15.5, -15.0, -14.6]
+    envelope += [-14.5] * 30
+    t = 0.0
+    for mag in envelope:
+        t += 0.02
+        out = fw.tick(
+            _bv2_tone_metrics(plan, 9, mag), {}, sung_vocals=sung,
+            active_phase=ServicePhase.WORSHIP_HIGH, dt_s=0.02, now_s=t,
+        )
+        assert not any("FEEDBACK" in e.summary for e in out.events), f"false cut at t={t:.2f}s mag={mag}"
+        assert out.channels_state["ch4_bv2"].feedback_ceiling_db is None
+
+
+def test_antifeedback_still_cuts_ringing_howl_on_singing_bv_fundamental() -> None:
+    """A real howl at a vocal-fundamental frequency on a singing BV mic rings up continuously
+    (here 20 dB/s from a -42 dB onset) and must still be cut promptly."""
+    plan, rules, _, _, fw = _make_stack()
+    _arm_all_and_activate(plan, rules, fw, ServicePhase.WORSHIP_HIGH)
+    sung = {"ch4_bv2": True}
+    t = 0.0
+    first_cut_t: float | None = None
+    for i in range(60):
+        t += 0.02
+        mag = min(-8.0, -42.0 + 20.0 * 0.02 * i)
+        out = fw.tick(
+            _bv2_tone_metrics(plan, 9, mag), {}, sung_vocals=sung,
+            active_phase=ServicePhase.WORSHIP_HIGH, dt_s=0.02, now_s=t,
+        )
+        if first_cut_t is None and any("ANTI-FEEDBACK CUT" in e.summary for e in out.events):
+            first_cut_t = t
+    assert first_cut_t is not None, "ringing howl on a sung fundamental was not cut"
+    assert first_cut_t < 0.40
+    assert out.channels_state["ch4_bv2"].feedback_ceiling_db is not None
+
+
 # ---------------------------------------------------------------------------
 # 7. Watchdog (>50 ms x 5 Consecutive Late Ticks) & Smart Thumbs-Down Rollback
 # ---------------------------------------------------------------------------
