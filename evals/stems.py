@@ -167,6 +167,22 @@ def _sum_files(files: list[Path], pan_alternate: bool = False) -> np.ndarray | N
     return out
 
 
+def _concat_files(files: list[Path]) -> np.ndarray | None:
+    """Play files back to back (one talker at a time), stopping once MAX_PART_SECONDS is filled."""
+    if not files:
+        return None
+    cap = int(MAX_PART_SECONDS * SAMPLE_RATE)
+    chunks: list[np.ndarray] = []
+    total = 0
+    for f in files:
+        a = _load_norm(f)[: cap - total]
+        chunks.append(a)
+        total += len(a)
+        if total >= cap:
+            break
+    return np.concatenate(chunks, axis=0).astype(np.float32)
+
+
 def classify_folder(source: Source, root: Path) -> dict[str, list[Path]]:
     """part -> files, honouring `picks` overrides, for audition and loading."""
     files = _audio_files(root / source.id)
@@ -208,7 +224,9 @@ def load_parts(source: Source, root: Path, seed: int) -> dict[str, PartSource]:
                 add("bv2", _sum_files(bvs[1:2] or bvs[:1]), bvs[1:2] or bvs[:1])
         elif part == "lead":
             add("lead", _sum_files(files), files)
-        elif part in ("speech", "room", "keys", "guitar", "drums", "bass"):
+        elif part == "speech":  # sermon folders hold sequential files (chapters, utterances): never overlay talkers
+            add(part, _concat_files(files), files)
+        elif part in ("room", "keys", "guitar", "drums", "bass"):
             add(part, _sum_files(files), files)
         elif part == "choir":
             add("choir", _sum_files(files, pan_alternate=True), files)

@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 from engine.core.protocol import AutonomyMode, MixingRules, ServicePhase, ServicePlan, cc_to_db, db_to_cc
+from engine.core.vad_worker import VADWorker
 from engine.main import DEFAULT_MIXING_RULES_PATH, DEFAULT_SERVICE_PLAN_PATH, AetherMixEngine
 from engine.tests.mock_io import MockBridgeClient, MockLLMSupervisor
 
@@ -50,6 +51,7 @@ class TickLog:
     heartbeat: dict[str, float] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     masters: tuple[np.ndarray, np.ndarray] | None = None  # (aethermix, static) stereo float32
+    vad_backend: str = "unknown"  # "silero" | "dsp"
 
     def save_npz(self, path: Path) -> None:
         arrays: dict[str, Any] = {"t": self.t, "phase": self.phase, "speech_open": self.speech_open,
@@ -74,7 +76,10 @@ async def run_timeline(
     use_service_plan: bool = False,
     keep_audio: bool = False,
     progress: bool = False,
+    vad: str = "auto",
 ) -> TickLog:
+    """vad: "silero" (default model if installed), "dsp" (deterministic fallback), or "auto" = DSP when the
+    speech part is a synthetic stand-in (Silero correctly rejects the synthetic glottal tone), else Silero."""
     plan = ServicePlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
     rules = MixingRules.model_validate_json(rules_path.read_text(encoding="utf-8"))
     base = rules.phase_baselines_db[ServicePhase.SPOKEN_WORD]
@@ -92,6 +97,9 @@ async def run_timeline(
         pastor_e_mix=np.zeros(n), band_e_mix=np.zeros(n), pastor_e_raw=np.zeros(n), band_e_raw=np.zeros(n),
         tick_ms=np.zeros(n),
     )
+    if vad == "auto":
+        vad = "dsp" if any(p.endswith(":speech") for p in tl.synthetic_parts) else "silero"
+    vad_worker = VADWorker(plan, model_path=Path("/nonexistent/silero_vad.onnx")) if vad == "dsp" else None
     static_db = {c: float(np.mean([rules.phase_baselines_db[p][c] for p in (ServicePhase.WORSHIP_LOW, ServicePhase.WORSHIP_HIGH)]))
                  for c in CHANNELS}
     aether_blocks: list[np.ndarray] = []
@@ -104,8 +112,10 @@ async def run_timeline(
             plan=plan, rules=rules, rules_path=td_path / "mixing_rules.json", backup_dir=td_path / "backups",
             db_path=td_path / "telemetry.db", token="eval-token", headless=True, enable_clap=False,
             use_service_plan=use_service_plan, bridge_client=bridge, llm_supervisor=MockLLMSupervisor(plan),
+            vad_worker=vad_worker,
         )
         await engine.start(start_loop=False)
+        log.vad_backend = "silero" if engine.vad_worker.using_onnx else "dsp"
         try:
             for ch in plan.channels:
                 engine.safety_firewall.set_channel_armed(ch.id, True)

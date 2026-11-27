@@ -17,7 +17,7 @@ from evals.manifest import PROFILES, SLOTS, load_gates, load_services, load_sour
 from evals.report import aggregate, write_reports
 from evals.runner import CHANNELS, DT, PHASES, TickLog, run_timeline
 from evals.scoring import GateResult, judge, macro_f1, score_run
-from evals.stems import PartSource, classify_filename, synth_block
+from evals.stems import PartSource, classify_filename, load_parts, synth_block
 from evals.timeline import audio_onset_s, build_timeline
 
 RULES_PATH = REPO_ROOT / "engine" / "schemas" / "mixing_rules.json"
@@ -139,6 +139,16 @@ def test_real_stems_replace_synthetic_and_are_not_flagged(tmp_path: Path) -> Non
     assert lay.source is not None and not lay.source.synthetic
     # 3 s of real audio loops instead of running out
     assert lay.source.read(SAMPLE_RATE * 10, BLOCK_FRAMES).shape == (BLOCK_FRAMES, 2)
+
+
+def test_sermon_files_play_back_to_back_not_overlaid(tmp_path: Path) -> None:
+    folder = tmp_path / "spurgeon_1858"
+    folder.mkdir()
+    t = np.arange(SAMPLE_RATE * 2) / SAMPLE_RATE
+    for i, f0 in enumerate((180.0, 220.0, 260.0)):
+        sf.write(str(folder / f"sermon_{i:02d}.wav"), (0.2 * np.sin(2 * np.pi * f0 * t)).astype(np.float32), SAMPLE_RATE)
+    parts = load_parts(SOURCES.by_id()["spurgeon_1858"], tmp_path, seed=1)
+    assert len(parts["speech"].data) == 3 * len(t), "speech files must be concatenated (one talker at a time), not summed"
 
 
 def test_audio_onset_skips_leading_silence() -> None:
@@ -285,6 +295,7 @@ def test_manual_sources_explain_where_to_put_files(tmp_path: Path) -> None:
 async def test_smoke_run_scores_every_headless_gate_and_reports(tmp_path: Path) -> None:
     tl = build_timeline(SERVICES, SOURCES, "svc1", "smoke", stems_root=tmp_path / "none")
     log = await run_timeline(tl)
+    assert log.vad_backend == "dsp", "synthetic speech must use the DSP VAD (Silero rejects the synthetic voice)"
     assert len(log.t) == tl.n_ticks and set(PHASES) >= {PHASES[i] for i in set(log.phase.tolist())}
     assert log.vol_db["ch1_pastor"].min() > -61.0 and log.lufs_short.max() > -60.0, "closed-loop master must reach the LUFS meter"
     rules = MixingRules.model_validate_json(RULES_PATH.read_text())

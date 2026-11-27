@@ -147,11 +147,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     out_dir = Path(args.out) if args.out else DEFAULT_RUNS_ROOT / datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    vad_backends: dict[str, str] = {}
     for sid, tl in timelines.items():
         print(f"== {sid}: {tl.total_s:.0f}s ({args.profile}), synthetic parts: {len(tl.synthetic_parts)}", flush=True)
         t0 = time.time()
         log = asyncio.run(run_timeline(tl, PLAN, RULES, use_service_plan=args.use_service_plan,
                                        keep_audio=args.write_audio, progress=True))
+        vad_backends[sid] = log.vad_backend
         (out_dir / sid).mkdir(exist_ok=True)
         log.save_npz(out_dir / sid / "ticks.npz")
         tl.write_markers_csv(out_dir / sid / "markers.csv")
@@ -165,7 +167,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         results += score_run(log, tl, gates, rules, services.settle_s)
         print(f"   done in {time.time() - t0:.0f}s", flush=True)
     meta = {"profile": args.profile, "services": ids, "synthetic": synthetic, "bleed_db": args.bleed_db,
-            "use_service_plan": args.use_service_plan, "mode": "headless closed-loop emulation (not MainStage)"}
+            "use_service_plan": args.use_service_plan, "vad_backend": vad_backends, "mode": "headless closed-loop emulation (not MainStage)"}
     agg = write_reports(out_dir, results, gates, meta)
     print((out_dir / "report.md").read_text(encoding="utf-8"))
     print(f"Report: {out_dir / 'report.md'}")
