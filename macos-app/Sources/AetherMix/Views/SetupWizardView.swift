@@ -191,70 +191,222 @@ public struct SetupWizardView: View {
     private var systemCheckStep: some View {
         let rows = checker.checks + liveRows
         let failing = rows.filter { $0.critical && $0.status == .fail }.count
+        let anyMissing = checker.checks.contains { $0.status != .ok }
         return VStack(alignment: .leading, spacing: 12) {
-            wizardCard(
-                title: "Dependency & Connection Status",
-                badge: checker.isRefreshing ? "CHECKING…" : (failing == 0 ? "READY" : "\(failing) BLOCKING"),
-                badgeColor: checker.isRefreshing ? MissionTheme.cyanTarget : (failing == 0 ? MissionTheme.emerald : MissionTheme.crimson)
-            ) {
-                HStack(spacing: 10) {
-                    Button(checker.isRefreshing ? "Checking…" : "Re-check") {
-                        processManager.refreshBridgeLaunchAgentStatus()
-                        Task { await checker.refresh(repoRoot: processManager.repoRootURL) }
-                    }
-                    .disabled(checker.isRefreshing)
-
-                    if checker.checks.contains(where: { $0.fix == .runInstaller && $0.status != .ok }) {
-                        Button("Run Full Installer (Terminal)") {
-                            checker.apply(.runInstaller, repoRoot: processManager.repoRootURL, processManager: processManager)
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    Spacer()
-                    Text("Model: \(checker.model)")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(MissionTheme.textSecondary)
-                }
-                if let msg = checker.fixMessage {
-                    Text(msg)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(MissionTheme.cyanTarget)
-                }
+            systemCheckHeaderCard(failing: failing, anyMissing: anyMissing)
+            if checker.isRunningTask || !checker.taskLogLines.isEmpty {
+                liveTaskConsoleCard
             }
-
             ForEach(rows) { row in
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: symbol(for: row.status))
-                        .font(.system(size: 15))
-                        .foregroundStyle(color(for: row.status))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.title)
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(MissionTheme.textPrimary)
-                        Text(row.detail)
-                            .font(.system(size: 10))
-                            .foregroundStyle(MissionTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    if let fix = row.fix, row.status != .ok {
-                        Button(fix.buttonTitle) {
-                            checker.apply(fix, repoRoot: processManager.repoRootURL, processManager: processManager)
-                            if fix == .installBridgeAgent {
-                                Task {
-                                    try? await Task.sleep(for: .seconds(2))
-                                    bridgeClient.connectOnce()
-                                }
-                            }
-                        }
-                        .font(.system(size: 10, weight: .semibold))
-                    }
-                }
-                .padding(10)
-                .background(MissionTheme.panelBg, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(color(for: row.status).opacity(0.5), lineWidth: 1))
+                dependencyRow(row)
             }
         }
+    }
+
+    @ViewBuilder
+    private func systemCheckHeaderCard(failing: Int, anyMissing: Bool) -> some View {
+        let badgeText = checker.isRunningTask
+            ? "RUNNING…"
+            : (checker.isRefreshing ? "CHECKING…" : (failing == 0 ? "READY" : "\(failing) BLOCKING"))
+        let badgeColor = (checker.isRunningTask || checker.isRefreshing)
+            ? MissionTheme.cyanTarget
+            : (failing == 0 ? MissionTheme.emerald : MissionTheme.crimson)
+        wizardCard(title: "Dependency & Connection Status", badge: badgeText, badgeColor: badgeColor) {
+            HStack(spacing: 8) {
+                Button(checker.isRefreshing ? "Checking…" : "Re-check") {
+                    processManager.refreshBridgeLaunchAgentStatus()
+                    Task { await checker.refresh(repoRoot: processManager.repoRootURL) }
+                }
+                .disabled(checker.isRefreshing || checker.isRunningTask)
+
+                Button {
+                    checker.apply(.runVerificationDoctor, repoRoot: processManager.repoRootURL, processManager: processManager)
+                } label: {
+                    Label("Run Doctor (Live Test)", systemImage: "stethoscope")
+                }
+                .disabled(checker.isRunningTask)
+                .help("Runs scripts/check_setup.py --test-ollama in-app to test BlackHole, CoreMIDI, Silero VAD ONNX, and live Qwen JSON inference")
+
+                if anyMissing {
+                    Button {
+                        checker.apply(.runInstaller, repoRoot: processManager.repoRootURL, processManager: processManager)
+                    } label: {
+                        Label("Install All Missing", systemImage: "arrow.down.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(checker.isRunningTask)
+                    .help("Runs scripts/install_prereqs.sh in Terminal (installs Homebrew deps, BlackHole 16ch, Python venv, Ollama + Qwen, and Bridge LaunchAgent)")
+                }
+
+                Spacer()
+
+                qwenModelPicker
+            }
+
+            if let msg = checker.fixMessage {
+                HStack(spacing: 6) {
+                    if checker.isRunningTask {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(msg)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(checker.lastTaskSucceeded == false ? MissionTheme.crimson : MissionTheme.cyanTarget)
+                }
+            }
+        }
+    }
+
+    private var qwenModelPicker: some View {
+        HStack(spacing: 4) {
+            Text("Qwen:")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(MissionTheme.textSecondary)
+            Menu {
+                ForEach(DependencyChecker.availableQwenModels, id: \.self) { m in
+                    Button {
+                        checker.selectModel(m, repoRoot: processManager.repoRootURL)
+                    } label: {
+                        if m == checker.model {
+                            Label(m, systemImage: "checkmark")
+                        } else {
+                            Text(m)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(checker.model)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8))
+                }
+                .foregroundStyle(MissionTheme.cyanTarget)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(MissionTheme.canvasBg, in: RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(MissionTheme.border, lineWidth: 1))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(checker.isRunningTask)
+            .help("Select Ollama Qwen model (qwen3:14b for 24 GB+ Macs, qwen3:8b for 16 GB Macs)")
+        }
+    }
+
+    private var liveTaskConsoleCard: some View {
+        let strokeColor: Color = checker.isRunningTask
+            ? MissionTheme.cyanTarget.opacity(0.7)
+            : (checker.lastTaskSucceeded == true ? MissionTheme.emerald.opacity(0.6) : MissionTheme.border)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(MissionTheme.cyanTarget)
+                Text(checker.activeTaskTitle ?? "Setup & Doctor Output")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(MissionTheme.textPrimary)
+                Spacer()
+                if checker.isRunningTask {
+                    Button("Cancel") { checker.cancelRunningTask() }
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(MissionTheme.crimson)
+                        .buttonStyle(.plain)
+                } else {
+                    Button("Clear") { checker.clearTaskLog() }
+                        .font(.system(size: 10))
+                        .foregroundStyle(MissionTheme.textSecondary)
+                        .buttonStyle(.plain)
+                }
+            }
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(checker.taskLogLines.enumerated()), id: \.offset) { idx, line in
+                            Text(line)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(logLineColor(line))
+                                .textSelection(.enabled)
+                                .id(idx)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 120)
+                .padding(8)
+                .background(MissionTheme.canvasBg, in: RoundedRectangle(cornerRadius: 6))
+                .onChange(of: checker.taskLogLines.count) { _, newCount in
+                    if newCount > 0 {
+                        proxy.scrollTo(newCount - 1, anchor: .bottom)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(MissionTheme.panelBg, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(strokeColor, lineWidth: 1))
+    }
+
+    private func logLineColor(_ line: String) -> Color {
+        if line.contains("[FAIL]") || line.contains("ERROR") {
+            return MissionTheme.crimson
+        }
+        if line.contains("[PASS]") || line.contains("Completed successfully") {
+            return MissionTheme.emerald
+        }
+        if line.contains("[WARN]") {
+            return MissionTheme.amber
+        }
+        return MissionTheme.textSecondary
+    }
+
+    private func dependencyRow(_ row: DependencyCheck) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol(for: row.status))
+                .font(.system(size: 15))
+                .foregroundStyle(color(for: row.status))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(MissionTheme.textPrimary)
+                Text(row.detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(MissionTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            if let fix = row.fix, row.status != .ok {
+                Button {
+                    checker.apply(fix, repoRoot: processManager.repoRootURL, processManager: processManager) {
+                        if fix == .installBridgeAgent || fix == .syncPythonRuntime {
+                            Task {
+                                try? await Task.sleep(for: .seconds(1))
+                                bridgeClient.connectOnce()
+                                processManager.ensureEngineRunning()
+                                wsClient.start()
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if fix.requiresTerminal {
+                            Image(systemName: "terminal").font(.system(size: 9))
+                        }
+                        Text(fix.buttonTitle)
+                    }
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .disabled(checker.isRunningTask && !fix.requiresTerminal)
+                .help(
+                    fix.requiresTerminal
+                        ? "Opens in Terminal (requires macOS admin/sudo prompt)"
+                        : "Runs directly inside AetherMix with live progress"
+                )
+            }
+        }
+        .padding(10)
+        .background(MissionTheme.panelBg, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(color(for: row.status).opacity(0.5), lineWidth: 1))
     }
 
     private func symbol(for status: CheckStatus) -> String {

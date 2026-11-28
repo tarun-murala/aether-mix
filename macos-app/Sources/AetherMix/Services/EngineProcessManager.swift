@@ -162,6 +162,8 @@ public final class EngineProcessManager {
 
             let uid = getuid()
             runLaunchctl(["bootout", "gui/\(uid)/com.aethermix.midibridge"])
+            usleep(300_000)
+            runLaunchctl(["enable", "gui/\(uid)/com.aethermix.midibridge"])
             let bootstrapOK = runLaunchctl(["bootstrap", "gui/\(uid)", targetURL.path])
 
             refreshBridgeLaunchAgentStatus()

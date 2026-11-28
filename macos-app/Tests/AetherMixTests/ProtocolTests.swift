@@ -527,6 +527,19 @@ struct ProtocolTests {
         #expect(snap.orderOfService[1].expectedPhase == .prayerUnderscore)
         #expect(snap.serviceStepIdx == 1)
     }
+
+    @Test("DependencyChecker fix metadata separates sudo Terminal installs from in-app streaming tasks")
+    func dependencyFixRoutingMetadata() {
+        #expect(CheckFix.installHomebrew.requiresTerminal == true)
+        #expect(CheckFix.installBlackHole.requiresTerminal == true)
+        #expect(CheckFix.runInstaller.requiresTerminal == true)
+        #expect(CheckFix.syncPythonRuntime.requiresTerminal == false)
+        #expect(CheckFix.pullModel.requiresTerminal == false)
+        #expect(CheckFix.stageSileroVAD.requiresTerminal == false)
+        #expect(CheckFix.runVerificationDoctor.requiresTerminal == false)
+        #expect(DependencyChecker.availableQwenModels.contains("qwen3:14b"))
+        #expect(DependencyChecker.availableQwenModels.contains("qwen3:8b"))
+    }
 }
 
 private final class LockedLines: @unchecked Sendable {
