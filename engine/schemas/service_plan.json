@@ -164,6 +164,7 @@
       "cc_taper": [[0, null], [1, -78.2], [4, -54.1], [8, -42.1], [16, -30.1], [24, -23.0], [32, -18.0], [48, -11.0], [64, -6.0], [80, -2.1], [96, 1.1], [112, 3.7], [127, 6.0]]
     }
   ],
+  "use_service_plan": true,
   "order_of_service": [
     {"id": "seg_1", "title": "Opening Worship (Songs 1–2)", "expected_phase": "WORSHIP_HIGH"},
     {"id": "seg_2", "title": "Song 3 (Acoustic Refrain)", "expected_phase": "WORSHIP_LOW"},

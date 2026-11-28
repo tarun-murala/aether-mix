@@ -612,11 +612,21 @@ class SafetyFirewall:
                 else:
                     track.clear_offset_after_touch_lock = True
 
-    def on_segment_advance(self, step_idx: int, now_s: float | None = None) -> None:
-        """Advance Order-of-Service segment: clear human offsets & pre-stage worship instruments."""
+    def on_segment_advance(
+        self,
+        step_idx: int,
+        now_s: float | None = None,
+        *,
+        prestage: bool = True,
+    ) -> None:
+        """Advance/mark Order-of-Service segment; optionally pre-stage worship instruments."""
         t = self._resolve_now(now_s)
         self.service_step_idx = max(0, int(step_idx))
         self._clear_human_offsets(t)
+
+        if not prestage:
+            self._prestage_worship = False
+            return
 
         segments = self.plan.order_of_service
         if segments and 0 <= self.service_step_idx < len(segments):

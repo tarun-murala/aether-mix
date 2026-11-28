@@ -819,6 +819,8 @@ public struct StateSnapshotPayload: Codable, Sendable, Equatable {
     public var autonomyMode: AutonomyMode
     public var bypassLatched: Bool
     public var freezeLearning: Bool
+    public var useServicePlan: Bool
+    public var orderOfService: [ServiceSegment]
     public var activePhase: ServicePhase
     public var phaseConfidence: Double
     public var hysteresisProgress: Double
@@ -834,6 +836,8 @@ public struct StateSnapshotPayload: Codable, Sendable, Equatable {
         case autonomyMode = "autonomy_mode"
         case bypassLatched = "bypass_latched"
         case freezeLearning = "freeze_learning"
+        case useServicePlan = "use_service_plan"
+        case orderOfService = "order_of_service"
         case activePhase = "active_phase"
         case phaseConfidence = "phase_confidence"
         case hysteresisProgress = "hysteresis_progress"
@@ -850,6 +854,8 @@ public struct StateSnapshotPayload: Codable, Sendable, Equatable {
         autonomyMode: AutonomyMode = .shadowObserve,
         bypassLatched: Bool = false,
         freezeLearning: Bool = false,
+        useServicePlan: Bool = true,
+        orderOfService: [ServiceSegment] = ChannelCatalog.defaultOrderOfService,
         activePhase: ServicePhase = .spokenWord,
         phaseConfidence: Double = 0.0,
         hysteresisProgress: Double = 0.0,
@@ -864,6 +870,8 @@ public struct StateSnapshotPayload: Codable, Sendable, Equatable {
         self.autonomyMode = autonomyMode
         self.bypassLatched = bypassLatched
         self.freezeLearning = freezeLearning
+        self.useServicePlan = useServicePlan
+        self.orderOfService = orderOfService
         self.activePhase = activePhase
         self.phaseConfidence = phaseConfidence
         self.hysteresisProgress = hysteresisProgress
@@ -881,6 +889,8 @@ public struct StateSnapshotPayload: Codable, Sendable, Equatable {
         self.autonomyMode = try c.decodeIfPresent(AutonomyMode.self, forKey: .autonomyMode) ?? .shadowObserve
         self.bypassLatched = try c.decodeIfPresent(Bool.self, forKey: .bypassLatched) ?? false
         self.freezeLearning = try c.decodeIfPresent(Bool.self, forKey: .freezeLearning) ?? false
+        self.useServicePlan = try c.decodeIfPresent(Bool.self, forKey: .useServicePlan) ?? true
+        self.orderOfService = try c.decodeIfPresent([ServiceSegment].self, forKey: .orderOfService) ?? ChannelCatalog.defaultOrderOfService
         self.activePhase = try c.decodeIfPresent(ServicePhase.self, forKey: .activePhase) ?? .spokenWord
         self.phaseConfidence = try c.decodeIfPresent(Double.self, forKey: .phaseConfidence) ?? 0.0
         self.hysteresisProgress = try c.decodeIfPresent(Double.self, forKey: .hysteresisProgress) ?? 0.0

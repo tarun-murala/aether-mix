@@ -10,9 +10,16 @@ public struct MainDashboardView: View {
     @State private var showReviewDrawer = false
     @State private var showSetupWizard = false
     @State private var showDiagnosticsDrawer = false
+    @State private var showOrderOfServiceEditor = false
     @State private var checker = DependencyChecker.shared
 
-    private let orderOfService: [ServiceSegment] = ChannelCatalog.defaultOrderOfService
+    private var orderOfService: [ServiceSegment] {
+        wsClient.snapshot.orderOfService
+    }
+
+    private var ignoringOrderOfService: Bool {
+        !wsClient.snapshot.useServicePlan
+    }
 
     public init(
         wsClient: EngineWebSocketClient,
@@ -103,6 +110,9 @@ public struct MainDashboardView: View {
                 bridgeClient: bridgeClient,
                 processManager: processManager
             )
+        }
+        .sheet(isPresented: $showOrderOfServiceEditor) {
+            OrderOfServiceEditorView(wsClient: wsClient)
         }
     }
 
@@ -309,63 +319,141 @@ public struct MainDashboardView: View {
 
     private var orderOfServiceBar: some View {
         HStack(spacing: 8) {
-            Text("ORDER OF SERVICE")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(MissionTheme.textSecondary)
+            HStack(spacing: 6) {
+                Text("ORDER OF SERVICE")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(MissionTheme.textSecondary)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(Array(orderOfService.enumerated()), id: \.element.id) { idx, segment in
-                        let isCurrent = idx == wsClient.snapshot.serviceStepIdx
-                        let isPast = idx < wsClient.snapshot.serviceStepIdx
-                        Button {
-                            Task { await wsClient.advanceServiceStep(stepIdx: idx) }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Text("\(idx + 1)")
-                                    .font(.system(size: 9, weight: .black, design: .monospaced))
-                                    .foregroundStyle(isCurrent ? Color.black : MissionTheme.textSecondary)
-                                    .frame(width: 16, height: 16)
-                                    .background(
-                                        isCurrent ? MissionTheme.cyanTarget : (isPast ? MissionTheme.emerald.opacity(0.35) : MissionTheme.canvasBg),
-                                        in: Circle()
-                                    )
-                                Text(segment.title)
-                                    .font(.system(size: 10, weight: isCurrent ? .bold : .medium))
-                                    .foregroundStyle(isCurrent ? MissionTheme.textPrimary : MissionTheme.textSecondary)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                isCurrent ? MissionTheme.cardBg : Color.clear,
-                                in: Capsule()
-                            )
-                            .overlay(
-                                Capsule().stroke(
-                                    isCurrent ? MissionTheme.cyanTarget.opacity(0.7) : MissionTheme.border.opacity(0.6),
-                                    lineWidth: 1
-                                )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!wsClient.isConnected)
+                // 1-Click Ignore Order of Service (Pure Live Audio) Toggle
+                Button {
+                    Task { await wsClient.setUseServicePlan(ignoringOrderOfService) }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: ignoringOrderOfService ? "waveform" : "list.bullet.rectangle")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(ignoringOrderOfService ? "IGNORE PLAN · LIVE AUDIO" : "Ignore Plan")
+                            .font(.system(size: 9, weight: .black, design: .monospaced))
                     }
+                    .foregroundStyle(ignoringOrderOfService ? Color.black : MissionTheme.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        ignoringOrderOfService ? MissionTheme.amber : MissionTheme.cardBg,
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule().stroke(
+                            ignoringOrderOfService ? MissionTheme.amber : MissionTheme.border,
+                            lineWidth: 1
+                        )
+                    )
                 }
+                .buttonStyle(.plain)
+                .disabled(!wsClient.isConnected)
+                .help(
+                    ignoringOrderOfService
+                        ? "Order of Service is IGNORED (100% live audio). Click to re-enable 20% soft prior. You can still click segments to mark them for learning & telemetry."
+                        : "Click to ignore Order of Service and run 100% on live audio (segments stay clickable to mark learnings)."
+                )
             }
 
+            if orderOfService.isEmpty {
+                Text("No segments configured — running 100% on live audio (click Edit Plan to add optional learning markers)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(MissionTheme.textSecondary)
+                Spacer()
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(orderOfService.enumerated()), id: \.element.id) { idx, segment in
+                            let isCurrent = idx == wsClient.snapshot.serviceStepIdx
+                            let isPast = idx < wsClient.snapshot.serviceStepIdx
+                            Button {
+                                Task { await wsClient.advanceServiceStep(stepIdx: idx) }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text("\(idx + 1)")
+                                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                                        .foregroundStyle(isCurrent ? Color.black : MissionTheme.textSecondary)
+                                        .frame(width: 16, height: 16)
+                                        .background(
+                                            isCurrent
+                                                ? (ignoringOrderOfService ? MissionTheme.amber : MissionTheme.cyanTarget)
+                                                : (isPast ? MissionTheme.emerald.opacity(0.35) : MissionTheme.canvasBg),
+                                            in: Circle()
+                                        )
+                                    Text(segment.title)
+                                        .font(.system(size: 10, weight: isCurrent ? .bold : .medium))
+                                        .foregroundStyle(
+                                            isCurrent
+                                                ? MissionTheme.textPrimary
+                                                : MissionTheme.textSecondary.opacity(ignoringOrderOfService ? 0.78 : 1.0)
+                                        )
+                                    if isCurrent && ignoringOrderOfService {
+                                        Text("MARKED")
+                                            .font(.system(size: 8, weight: .black, design: .monospaced))
+                                            .foregroundStyle(MissionTheme.amber)
+                                    }
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    isCurrent ? MissionTheme.cardBg : Color.clear,
+                                    in: Capsule()
+                                )
+                                .overlay(
+                                    Capsule().stroke(
+                                        isCurrent
+                                            ? (ignoringOrderOfService ? MissionTheme.amber.opacity(0.75) : MissionTheme.cyanTarget.opacity(0.7))
+                                            : MissionTheme.border.opacity(0.6),
+                                        lineWidth: 1
+                                    )
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!wsClient.isConnected)
+                            .help(
+                                ignoringOrderOfService
+                                    ? "Mark '\(segment.title)' for learning & telemetry (does not bias live audio classifier)"
+                                    : "Jump to '\(segment.title)' (20% soft prior -> \(segment.expectedPhase.displayName))"
+                            )
+                        }
+                    }
+                }
+
+                Button {
+                    let nextIdx = min(orderOfService.count - 1, wsClient.snapshot.serviceStepIdx + 1)
+                    Task { await wsClient.advanceServiceStep(stepIdx: nextIdx) }
+                } label: {
+                    Label(ignoringOrderOfService ? "Mark Next" : "Next Segment", systemImage: "forward.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(
+                            ignoringOrderOfService ? MissionTheme.amber : MissionTheme.cyanTarget,
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!wsClient.isConnected || orderOfService.isEmpty)
+            }
+
+            // Edit Order of Service & Ignore Policy Sheet Button
             Button {
-                let nextIdx = min(orderOfService.count - 1, wsClient.snapshot.serviceStepIdx + 1)
-                Task { await wsClient.advanceServiceStep(stepIdx: nextIdx) }
+                showOrderOfServiceEditor = true
             } label: {
-                Label("Next Segment", systemImage: "forward.fill")
+                Label("Edit Plan", systemImage: "pencil")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.black)
-                    .padding(.horizontal, 9)
+                    .foregroundStyle(MissionTheme.textPrimary)
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(MissionTheme.cyanTarget, in: Capsule())
+                    .background(MissionTheme.cardBg, in: Capsule())
+                    .overlay(Capsule().stroke(MissionTheme.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
             .disabled(!wsClient.isConnected)
+            .help("Edit Order of Service segments or toggle Ignore Order of Service")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)

@@ -18,6 +18,7 @@ audio = [
     "sounddevice>=0.5.0",
     "python-rtmidi>=1.5.8",
     "soundfile>=0.12.1",
+    "onnxruntime>=1.19.0",
 ]
 ml = [
     "onnxruntime>=1.19.0",

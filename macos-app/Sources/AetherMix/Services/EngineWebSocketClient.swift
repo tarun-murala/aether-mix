@@ -414,6 +414,28 @@ public final class EngineWebSocketClient {
         _ = try? await sendRPC(type: "advance_service_step", payload: payload)
     }
 
+    public func setUseServicePlan(_ enabled: Bool) async {
+        _ = try? await sendRPC(
+            type: "set_use_service_plan",
+            payload: ["enabled": .bool(enabled)]
+        )
+    }
+
+    public func updateOrderOfService(_ segments: [ServiceSegment], useServicePlan: Bool? = nil) async {
+        let encodedSegments: [JSONValue] = segments.map { seg in
+            .object([
+                "id": .string(seg.id),
+                "title": .string(seg.title),
+                "expected_phase": .string(seg.expectedPhase.rawValue)
+            ])
+        }
+        var payload: [String: JSONValue] = ["segments": .array(encodedSegments)]
+        if let useServicePlan {
+            payload["use_service_plan"] = .bool(useServicePlan)
+        }
+        _ = try? await sendRPC(type: "update_order_of_service", payload: payload)
+    }
+
     public func sendFeedbackThumb(_ thumb: FeedbackThumb) async {
         _ = try? await sendRPC(type: "feedback_thumb", payload: ["thumb": .string(thumb.rawValue)])
     }

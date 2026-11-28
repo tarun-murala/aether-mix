@@ -578,3 +578,61 @@ async def test_qa_regressions_reconnect_stall_watchdog_signature_and_override_ex
         assert out2.autonomy_mode == AutonomyMode.SHADOW_OBSERVE
     finally:
         await live_engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_e2e_ignore_order_of_service_edit_and_learning_markers(tmp_path: Path) -> None:
+    """Verify Ignore Order of Service toggle, editable segments, and segment tagging for learning."""
+    engine, _bridge, _llm = _make_test_engine(tmp_path)
+    await engine.start(start_loop=False)
+    try:
+        # 1. Toggle Ignore Order of Service ON (use_service_plan = False) & verify persistence
+        r_ign = await engine.handle_rpc("set_use_service_plan", {"ignore": True}, req_id="ign-1")
+        assert r_ign["type"] == "ack"
+        assert r_ign["payload"]["data"]["use_service_plan"] is False
+        assert engine.use_service_plan is False
+        assert engine.build_state_snapshot()["use_service_plan"] is False
+
+        persisted = ServicePlan.model_validate_json((tmp_path / "service_plan.json").read_text(encoding="utf-8"))
+        assert persisted.use_service_plan is False
+
+        # 2. Edit Order of Service segments dynamically while ignored
+        custom_segments = [
+            {"id": "s_open", "title": "Spontaneous Opener", "expected_phase": "WORSHIP_HIGH"},
+            {"id": "s_prayer", "title": "Altar Prayer", "expected_phase": "PRAYER_UNDERSCORE"},
+            {"id": "s_msg", "title": "Message", "expected_phase": "SPOKEN_WORD"},
+        ]
+        r_upd = await engine.handle_rpc(
+            "update_order_of_service",
+            {"segments": custom_segments, "use_service_plan": False},
+            req_id="upd-1",
+        )
+        assert r_upd["type"] == "ack"
+        assert len(engine.plan.order_of_service) == 3
+        assert engine.build_state_snapshot()["order_of_service"][1]["title"] == "Altar Prayer"
+
+        # 3. Mark segment 1 ("Altar Prayer") while Ignore Plan is ON -> does NOT prestage worship,
+        #    tags queued Freeze-Learning samples with segment_id & segment_title!
+        r_mark = await engine.handle_rpc("advance_service_step", {"step_idx": 1}, req_id="mark-1")
+        assert r_mark["type"] == "ack"
+        assert engine.service_step_idx == 1
+        assert engine.safety_firewall._prestage_worship is False
+
+        engine.freeze_learning = True
+        for ch in engine.plan.channels:
+            engine.safety_firewall.set_channel_armed(ch.id, True)
+        await engine._handle_feedback_thumb("up")
+        engine.telemetry_store.flush()
+        queued = engine.telemetry_store.list_queued_reviews()
+        assert len(queued) > 0
+        assert all(s.get("segment_id") == "s_prayer" for s in queued)
+        assert all(s.get("segment_title") == "Altar Prayer" for s in queued)
+
+        # 4. Re-enable Order of Service & verify worship pre-staging resumes on segment advance
+        r_on = await engine.handle_rpc("set_use_service_plan", {"enabled": True}, req_id="ign-2")
+        assert r_on["type"] == "ack"
+        assert engine.use_service_plan is True
+        await engine.handle_rpc("advance_service_step", {"step_idx": 0}, req_id="mark-0")
+        assert engine.safety_firewall._prestage_worship is True
+    finally:
+        await engine.stop()

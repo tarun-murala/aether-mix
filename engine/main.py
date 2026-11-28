@@ -52,6 +52,7 @@ from engine.core.protocol import (
     RuleExpiry,
     ServicePhase,
     ServicePlan,
+    ServiceSegment,
     WSEnvelope,
     cc_to_db,
     cross_validate_plan_and_rules,
@@ -97,7 +98,7 @@ class AetherMixEngine:
         token: str | None = None,
         headless: bool = False,
         enable_clap: bool | None = None,
-        use_service_plan: bool = True,
+        use_service_plan: bool | None = None,
         bridge_client: Any | None = None,
         llm_supervisor: Any | None = None,
         audio_tap: AudioTap | None = None,
@@ -112,7 +113,9 @@ class AetherMixEngine:
         self.rules_path = Path(rules_path) if rules_path is not None else None
         self.backup_dir = Path(backup_dir) if backup_dir is not None else DEFAULT_BACKUP_DIR
         self.headless = bool(headless)
-        self.use_service_plan = bool(use_service_plan)
+        self.use_service_plan = (
+            bool(plan.use_service_plan) if use_service_plan is None else bool(use_service_plan)
+        )
         self.token = token if token is not None else ensure_session_token(token_path)
 
         # Core subsystems
@@ -346,7 +349,9 @@ class AetherMixEngine:
             source=source,
         )
         if self.freeze_learning:
-            self.telemetry_store.queue_review_sample(sample)
+            sample_tagged = dict(sample)
+            sample_tagged.update(self._current_segment_meta())
+            self.telemetry_store.queue_review_sample(sample_tagged)
             self._queued_review_count += 1
             await self.broadcast_queued_reviews()
         else:
@@ -603,12 +608,21 @@ class AetherMixEngine:
     # Payload Builders & WebSocket Broadcasting
     # ------------------------------------------------------------------
 
+    def _current_segment_meta(self) -> dict[str, Any]:
+        segs = self.plan.order_of_service
+        if segs and 0 <= self.service_step_idx < len(segs):
+            seg = segs[self.service_step_idx]
+            return {"segment_id": seg.id, "segment_title": seg.title}
+        return {}
+
     def build_state_snapshot(self) -> dict[str, Any]:
         payload = {
             "channel_ids": list(self.plan.channel_ids),
             "autonomy_mode": self.safety_firewall.autonomy_mode.value,
             "bypass_latched": self.safety_firewall.bypass_latched,
             "freeze_learning": self.freeze_learning,
+            "use_service_plan": self.use_service_plan,
+            "order_of_service": [s.model_dump(mode="json") for s in self.plan.order_of_service],
             "active_phase": self.scene_classifier.active_phase.value,
             "phase_confidence": round(self.phase_confidence, 4),
             "hysteresis_progress": round(self.hysteresis_progress, 4),
@@ -648,7 +662,9 @@ class AetherMixEngine:
     def _snapshot_signature(self) -> str:
         return (
             f"{self.safety_firewall.autonomy_mode.value}|{self.safety_firewall.bypass_latched}|"
-            f"{self.freeze_learning}|{self.scene_classifier.active_phase.value}|"
+            f"{self.freeze_learning}|{self.use_service_plan}|"
+            f"{[(s.id, s.title, s.expected_phase.value) for s in self.plan.order_of_service]}|"
+            f"{self.scene_classifier.active_phase.value}|"
             f"{round(self.phase_confidence, 2)}|{round(self.hysteresis_progress, 2)}|"
             f"{self.service_step_idx}|{self._queued_review_count}|"
             f"{len(self.rules_manager.list_active_rules())}|{len(self.rules_manager.list_pending_rules())}|"
@@ -757,8 +773,11 @@ class AetherMixEngine:
             raise ValueError(f"Unsupported feedback_thumb direction: {direction!r}")
 
         if self.freeze_learning:
+            seg_meta = self._current_segment_meta()
             for sample in samples:
-                self.telemetry_store.queue_review_sample(sample)
+                tagged = dict(sample)
+                tagged.update(seg_meta)
+                self.telemetry_store.queue_review_sample(tagged)
             self._queued_review_count += len(samples)
             await self.broadcast_queued_reviews()
         elif samples:
@@ -796,7 +815,7 @@ class AetherMixEngine:
                 {"req_id": req_id, "ok": False, "code": "SAFE_UPDATE_BLOCKED", "message": str(exc)},
                 req_id=req_id,
             )
-        except (KeyError, ValueError, RuntimeError) as exc:
+        except (KeyError, TypeError, ValueError, RuntimeError) as exc:
             return self._next_envelope(
                 "error",
                 {"req_id": req_id, "ok": False, "code": "RPC_ERROR", "message": str(exc)},
@@ -874,6 +893,85 @@ class AetherMixEngine:
             await self.broadcast_state_snapshot()
             return {"active_phase": phase.value, "hold_seconds": hold_s}
 
+        if msg_type == "set_use_service_plan":
+            if "ignore" in payload:
+                enabled = not bool(payload["ignore"])
+            else:
+                enabled = bool(payload.get("enabled", payload.get("use_service_plan", True)))
+            self.use_service_plan = enabled
+            self.plan.use_service_plan = enabled
+            if not enabled:
+                self.safety_firewall._prestage_worship = False
+            self._save_service_plan_atomic()
+            evt = BrainEventPayload(
+                id=f"evt_{uuid.uuid4().hex[:10]}",
+                category=BrainCategory.ACTION,
+                summary=(
+                    "Order of Service ACTIVE (20% soft prior)"
+                    if enabled
+                    else "Order of Service IGNORED (100% live audio)"
+                ),
+                detail=(
+                    "Classifier blends 20% Order-of-Service prior with live audio; segments pre-stage worship."
+                    if enabled
+                    else "Classifier runs purely on live audio; you can still mark segments for learning & telemetry."
+                ),
+            )
+            self._record_and_schedule_event(evt)
+            await self.broadcast_state_snapshot()
+            return {"use_service_plan": self.use_service_plan, "ignore_order_of_service": not self.use_service_plan}
+
+        if msg_type == "update_order_of_service":
+            raw_segments = payload.get("segments")
+            if not isinstance(raw_segments, list):
+                raise ValueError("update_order_of_service requires a 'segments' list")
+            validated: list[ServiceSegment] = []
+            seen_ids: set[str] = set()
+            for idx, item in enumerate(raw_segments):
+                if not isinstance(item, dict):
+                    raise TypeError(f"Segment at index {idx} must be an object")
+                seg_id = str(item.get("id") or f"seg_{idx + 1}").strip()
+                if not seg_id or seg_id in seen_ids:
+                    seg_id = f"seg_{idx + 1}_{uuid.uuid4().hex[:4]}"
+                seen_ids.add(seg_id)
+                title = str(item.get("title", "")).strip()
+                if not title:
+                    raise ValueError(f"Segment at index {idx} must have a non-empty title")
+                phase = ServicePhase(str(item["expected_phase"]))
+                validated.append(ServiceSegment(id=seg_id, title=title, expected_phase=phase))
+
+            self.plan.order_of_service = validated
+            if "use_service_plan" in payload:
+                self.use_service_plan = bool(payload["use_service_plan"])
+                self.plan.use_service_plan = self.use_service_plan
+            elif "ignore" in payload:
+                self.use_service_plan = not bool(payload["ignore"])
+                self.plan.use_service_plan = self.use_service_plan
+
+            if validated:
+                self.service_step_idx = min(self.service_step_idx, len(validated) - 1)
+            else:
+                self.service_step_idx = 0
+            self.safety_firewall.service_step_idx = self.service_step_idx
+            self._save_service_plan_atomic()
+            evt = BrainEventPayload(
+                id=f"evt_{uuid.uuid4().hex[:10]}",
+                category=BrainCategory.ACTION,
+                summary=f"Updated Order of Service ({len(validated)} segment(s))",
+                detail=(
+                    "Plan active (20% soft prior)."
+                    if self.use_service_plan
+                    else "Plan ignored for live audio (marking enabled for learning)."
+                ),
+            )
+            self._record_and_schedule_event(evt)
+            await self.broadcast_state_snapshot()
+            return {
+                "order_of_service": [s.model_dump(mode="json") for s in validated],
+                "use_service_plan": self.use_service_plan,
+                "service_step_idx": self.service_step_idx,
+            }
+
         if msg_type == "advance_service_step":
             total_steps = len(self.plan.order_of_service)
             if "step_idx" in payload and payload["step_idx"] is not None:
@@ -885,11 +983,26 @@ class AetherMixEngine:
             if total_steps > 0 and not (0 <= next_idx < total_steps):
                 raise ValueError(f"step_idx {next_idx} out of bounds [0, {total_steps - 1}]")
             self.service_step_idx = next_idx
-            self.safety_firewall.on_segment_advance(next_idx, now_s=self._sim_clock_s)
+            self.safety_firewall.on_segment_advance(
+                next_idx, now_s=self._sim_clock_s, prestage=self.use_service_plan
+            )
             self.rules_manager.expire_ephemeral(RuleExpiry.SEGMENT_CHANGE)
             self._last_channels_state = self.safety_firewall.snapshot_channels_state(self._sim_clock_s)
+            if total_steps > 0:
+                seg = self.plan.order_of_service[next_idx]
+                evt = BrainEventPayload(
+                    id=f"evt_{uuid.uuid4().hex[:10]}",
+                    category=BrainCategory.RLHF if not self.use_service_plan else BrainCategory.ACTION,
+                    summary=f"Segment marked: {seg.title}",
+                    detail=(
+                        f"Expected {seg.expected_phase.value} (logged for learning; plan ignored by live classifier)."
+                        if not self.use_service_plan
+                        else f"Expected {seg.expected_phase.value} (20% soft prior active)."
+                    ),
+                )
+                self._record_and_schedule_event(evt)
             await self.broadcast_state_snapshot()
-            return {"service_step_idx": self.service_step_idx}
+            return {"service_step_idx": self.service_step_idx, "use_service_plan": self.use_service_plan}
 
         if msg_type == "feedback_thumb":
             direction = str(payload.get("direction", payload.get("thumb", ""))).lower()

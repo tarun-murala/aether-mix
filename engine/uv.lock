@@ -24,6 +24,7 @@ dependencies = [
 
 [package.optional-dependencies]
 audio = [
+    { name = "onnxruntime" },
     { name = "python-rtmidi" },
     { name = "sounddevice" },
     { name = "soundfile" },
@@ -44,6 +45,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "numpy", specifier = ">=1.26.0" },
+    { name = "onnxruntime", marker = "extra == 'audio'", specifier = ">=1.19.0" },
     { name = "onnxruntime", marker = "extra == 'ml'", specifier = ">=1.19.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },

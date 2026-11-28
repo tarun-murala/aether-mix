@@ -170,6 +170,8 @@ sed \
   -e "s|__HOME__|${HOME}|g" \
   "${PLIST_SRC}" > "${PLIST_DEST}"
 launchctl bootout "gui/$(id -u)/com.aethermix.midibridge" 2>/dev/null || true
+sleep 0.3
+launchctl enable "gui/$(id -u)/com.aethermix.midibridge" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "${PLIST_DEST}"
 echo "    [ok] LaunchAgent com.aethermix.midibridge installed and started"
 

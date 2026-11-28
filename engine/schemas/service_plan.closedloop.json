@@ -672,6 +672,7 @@
       ]
     }
   ],
+  "use_service_plan": true,
   "order_of_service": [
     {
       "id": "seg_1",

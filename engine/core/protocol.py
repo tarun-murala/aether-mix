@@ -336,6 +336,7 @@ class ServicePlan(BaseModel):
     room_tap_channels: list[int] = Field(default_factory=lambda: [13, 14])
     master_tap_channels: list[int] = Field(default_factory=lambda: [15, 16])
     channels: list[ChannelConfig] = Field(min_length=1)
+    use_service_plan: bool = True
     order_of_service: list[ServiceSegment] = Field(default_factory=list)
 
     @model_validator(mode="after")

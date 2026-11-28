@@ -495,6 +495,38 @@ struct ProtocolTests {
                 == .emergencyBypass
         )
     }
+
+    @Test("StateSnapshotPayload decodes use_service_plan and custom order_of_service segments")
+    func decodesIgnoreOrderOfServiceAndCustomSegments() throws {
+        let json = """
+        {
+          "channel_ids": ["ch1_pastor", "ch5_keys"],
+          "autonomy_mode": "SHADOW_OBSERVE",
+          "bypass_latched": false,
+          "freeze_learning": false,
+          "use_service_plan": false,
+          "order_of_service": [
+            {"id": "s1", "title": "Spontaneous Praise", "expected_phase": "WORSHIP_HIGH"},
+            {"id": "s2", "title": "Prayer Time", "expected_phase": "PRAYER_UNDERSCORE"}
+          ],
+          "active_phase": "WORSHIP_HIGH",
+          "phase_confidence": 0.91,
+          "hysteresis_progress": 1.0,
+          "service_step_idx": 1,
+          "channels": {},
+          "active_rules": [],
+          "pending_rules": [],
+          "queued_review_count": 0,
+          "hardware_warnings": []
+        }
+        """
+        let snap = try JSONDecoder().decode(StateSnapshotPayload.self, from: Data(json.utf8))
+        #expect(snap.useServicePlan == false)
+        #expect(snap.orderOfService.count == 2)
+        #expect(snap.orderOfService[0].title == "Spontaneous Praise")
+        #expect(snap.orderOfService[1].expectedPhase == .prayerUnderscore)
+        #expect(snap.serviceStepIdx == 1)
+    }
 }
 
 private final class LockedLines: @unchecked Sendable {
